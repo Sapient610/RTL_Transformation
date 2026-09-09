@@ -68,7 +68,7 @@ benchmark_cases/
 
 * **运行环境兼容**：
 * 系统中 LibreLane 通过 AppImage 启动，调用命令格式统一采用：
-`~/libreline/librelane-devshell-x86_64.AppImage librelane <config.json> ...`
+`~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py ...` (或执行内部工具链)
 
 
 * **动态 SDC 注入**：

@@ -43,7 +43,7 @@
 ## 2. 工具链与依赖环境
 
 * **物理后端（PnR）**：LibreLane / OpenLane（通过 AppImage 环境启动）
-  * **调用环境入口**：`~/libreline/librelane-devshell-x86_64.AppImage librelane <args>`
+  * **调用环境入口**：`~/librelane/librelane-devshell-x86_64.AppImage librelane <args>`
 * **形式验证（LEC）**：Yosys (0.62+) SAT 解算器
 * **门级仿真引擎**：Icarus Verilog (`iverilog` 2012 标准) + `vvp`
 * **功耗签核引擎**：OpenSTA (2.7.0+)
@@ -102,20 +102,18 @@ benchmark_cases/<case_name>/
 
 **Step 2: 物理实现全流程 (PnR Flow)**
 
-* **启动方式**：执行子进程时，需通过 `~/libreline/librelane-devshell-x86_64.AppImage librelane` 驱动。
+* **启动方式**：统一通过 `~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py` 驱动评估，内部工具链自动识别并共享 devshell 环境。
 * **动态 SDC 注入**：根据 `meta.json` 自动生成合规 `target.sdc`，并在 LibreLane 配置中显式传入 `"PNR_SDC_FILE"` 与 `"SIGNOFF_SDC_FILE"`，消除 OpenROAD 的 fallback 警告。
-* **完整跑通依赖保护**：必须配置 `"RUN_KLAYOUT_STREAMOUT": True` 与 `"RUN_MAGIC_STREAMOUT": True`，**严禁使用 `--skip Magic.StreamOut**`。跳过 Magic 版图导出将破坏下游 `Magic.WriteLEF` 与天线检查步骤的输入链。
+* **完整跑通依赖保护**：必须配置 `"RUN_KLAYOUT_STREAMOUT": True` 与 `"RUN_MAGIC_STREAMOUT": True`，**严禁使用 `--skip Magic.StreamOut`**。跳过 Magic 版图导出将破坏下游 `Magic.WriteLEF` 与天线检查步骤的输入链。
 * **网表选型注意点**：
-* `final/pnl/*.pnl.v` 包含 `.VPWR` 与 `.VGND`，仅用于 LVS/SPICE。
-* **门级仿真与 OpenSTA 签核必须提取 `final/nl/*.nl.v`（No-Power 纯逻辑门级网表）**。
-
-
+  * `final/pnl/*.pnl.v` 包含 `.VPWR` 与 `.VGND`，仅用于 LVS/SPICE。
+  * **门级仿真与 OpenSTA 签核必须提取 `final/nl/*.nl.v`（No-Power 纯逻辑门级网表）**。
 
 **Step 3: 案例仿真与活跃度波形提取 (Simulation & VCD)**
 
-* `iverilog` 编译参数**仅传 `-g2012 -DFUNCTIONAL**`。
-* **切勿手动传递 `-DUNIT_DELAY=0` 或 `-DUNIT_DELAY=""**`，避免与 Sky130 库自带的延迟修饰冲突产生语法解析错误。
-* `tb_top.v` 需以固定例化名 `u_dut` 实例化顶层模块，并调用 `$dumpvars(0, tb_top.u_dut)` 输出 `<tag>_activity.vcd`。
+* `iverilog` 编译参数**仅传 `-g2012 -DFUNCTIONAL`**。
+* **切勿手动传递 `-DUNIT_DELAY=0` 或 `-DUNIT_DELAY=""`**，避免与 Sky130 库自带的延迟修饰冲突产生语法解析错误。
+* `tb_top.v` 需以固定例化名 `u_dut` 实例化顶层模块，并调用 `$dumpvars(0, tb_top.u_dut)` 输出 `<tag>_activity.vcd`。提供标准模板样例：`templates/tb_top.v.template`。
 
 **Step 4: 签核级功耗分析 (Signoff Power Evaluation)**
 
@@ -127,18 +125,36 @@ benchmark_cases/<case_name>/
 
 ## 5. 快速上手
 
-运行指定用例目录的自动化评估：
+推荐使用 AppImage 启动环境后调用评估主脚本：
 
 ```bash
-python evaluate_case.py --case-dir ./benchmark_cases/reg_bank_case
+# 评估单模块时钟门控案例 (reg_bank)
+# 案例 1：单模块宽总线时钟门控经典优化案例 (reg_bank)
+~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py --case-dir ./benchmark_cases/reg_bank_case
 
+# 评估多源文件层次化低功耗案例 (multi_file_alu)
+# 案例 2：多文件组合逻辑操作数隔离优化案例 (alu_operand_isolation)
+~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py --case-dir ./benchmark_cases/alu_operand_isolation_case
+
+# 案例 3：【负优化对照组】窄位宽时钟门控开销倒挂案例 (multi_file_alu)
+~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py --case-dir ./benchmark_cases/multi_file_alu_case
 ```
 
-执行完毕后，控制台及集中日志目录 `eval_workspace/logs/<timestamp>/overall_pipeline.log` 将生成最终签核对比表：
+> **提示**：主脚本内建自适应环境探测机制。若在宿主直接运行 `python evaluate_case.py --case-dir ...`，脚本将自动检测并自托管重定向至 AppImage devshell 执行。
 
-| Power Metric | Original RTL | Optimized RTL |
-| --- | --- | --- |
-| **Internal** | 2.75e-04 W | 1.78e-04 W |
-| **Switching** | 5.91e-05 W | 2.87e-05 W |
-| **Leakage** | 2.84e-09 W | 1.89e-09 W |
-| **Total** | 3.34e-04 W | 2.06e-04 W |
+执行完毕后，控制台及集中日志目录 `eval_workspace/<case_name>/logs/<timestamp>/overall_pipeline.log` 将生成最终签核对比表：
+### 6. 基准案例签核功耗与效果对比
+
+| Power Metric     | Original RTL     | Optimized RTL    | Delta (%)       |
+| :--------------- | :--------------- | :--------------- | :-------------- |
+| **Internal**     | 2.73e-04 W       | 1.81e-04 W       | -33.70%         |
+| **Switching**    | 5.84e-05 W       | 3.05e-05 W       | -47.77%         |
+| **Leakage**      | 2.89e-09 W       | 1.88e-09 W       | -34.95%         |
+| **Total**        | 3.32e-04 W       | 2.12e-04 W       | -36.14%         |
+| 测试案例 | 变换技术 | 主要收益来源 | Total 功耗变化 | 核心结论 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`reg_bank_case`** | 32-bit 时钟门控 | 时序逻辑时钟树关断 | **-36.14%** (332µW → 212µW) | 纯寄存器宽总线场景下门控收益显著 |
+| **`alu_operand_isolation_case`** | 操作数隔离 (Operand Isolation) | 组合逻辑杂散翻转阻断 | **-38.76%** (725µW → 444µW) | 针对深层组合逻辑 (占比 76%) 的最优低功耗架构 |
+| **`multi_file_alu_case`** | 16-bit 窄位宽时钟门控 | *(负优化对照组)* | **+4.17%** (696µW → 725µW) | 独立生成的时钟树开销超过 16-bit 节省量，演示平衡位宽未达标现象 |
+
+
