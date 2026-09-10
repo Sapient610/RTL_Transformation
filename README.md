@@ -116,14 +116,53 @@ benchmark_cases/<case_name>/
 * `tb_top.v` 需以固定例化名 `u_dut` 实例化顶层模块，并调用 `$dumpvars(0, tb_top.u_dut)` 输出 `<tag>_activity.vcd`。提供标准模板样例：`templates/tb_top.v.template`。
 
 **Step 4: 签核级功耗分析 (Signoff Power Evaluation)**
+**Step 4: 多维签核级评估 (Signoff Power, Timing & Area)**
 
 * **VCD 作用域反标**：OpenSTA 调用 `read_vcd -scope tb_top/u_dut <vcd>`，使用标准斜杠路径确保引脚活动数大于 0。
 * **黑盒模块预载**：在读入网表前读入 `sky130_fd_sc_hd__blackbox.v`，防止物理 Filler/Tapcell 单元产生黑盒警告。
 * **单角点直接分析**：通过 `read_liberty` 载入典型工艺角库（无需声明未定义的 `-corner` 标签），使用原生 `report_power` 输出功耗拆解。
+* **功耗与时序联合签核**：OpenSTA 加载纯逻辑网表与 SPEF，以标准斜杠路径反标 `tb_top/u_dut` 作用域，分别输出功耗报表 `*_power.rpt` 及最长关键路径时序报表 `*_timing.rpt`。
+* **物理面积与利用率提取**：从 LibreLane `runs/<tag>/final/metrics.json` 精准提取门级物理实现的实际面积数据，输出独立的物理复杂度报表 `*_area.rpt`。
+
+**Step 5: 综合 PPA 报告与设计变换关系分析 (PPA Summary & Trade-off Analysis)**
+
+* 自动对比 Power（功耗）、Timing（时序）、Area（面积）与 Energy（能效 PDP）四大类核心指标。
+* 深入分析“功耗-面积代价比”、“功耗-时序敏感度”以及“功耗延迟积（PDP）”，输出完整的 Markdown 与 JSON 综合报告。
 
 ---
 
 ## 5. 快速上手
+## 5. 工作空间目录结构契约 (Workspace Layout)
+
+评估基座生成的所有产物完全解耦分层存放，保持根目录整洁：
+
+```text
+eval_workspace/<case_name>/
+├── sim/                          # 专用仿真目录
+│   ├── sim_orig.vvp              # 原始网表仿真可执行二进制
+│   ├── orig_activity.vcd         # 原始设计活动波形
+│   ├── sim_opt.vvp               # 优化网表仿真可执行二进制
+│   └── opt_activity.vcd          # 优化设计活动波形
+├── reports/                      # 专用报告与签核汇总目录
+│   ├── orig_power.rpt            # 原始设计功耗详报 (含 Group 拆解)
+│   ├── opt_power.rpt             # 优化设计功耗详报
+│   ├── orig_timing.rpt           # 原始设计时序关键路径详报
+│   ├── opt_timing.rpt            # 优化设计时序关键路径详报
+│   ├── orig_area.rpt             # 原始设计物理面积与单元统计详报
+│   ├── opt_area.rpt              # 优化设计物理面积与单元统计详报
+│   ├── ppa_summary.json          # 全维度 PPA 结构化指标数据
+│   └── ppa_summary.md            # 综合汇总报告（含功耗/时序/面积 Trade-off 关系深度分析）
+├── formal/                       # 形式等价性验证工程目录
+│   └── lec.ys
+├── orig/                         # 原始设计 LibreLane PnR 物理工程
+├── opt/                          # 优化设计 LibreLane PnR 物理工程
+└── logs/<timestamp>/             # 集中会话日志（保留历史时间戳归档）
+    └── overall_pipeline.log
+```
+
+---
+
+## 6. 快速上手
 
 推荐使用 AppImage 启动环境后调用评估主脚本：
 
@@ -144,6 +183,7 @@ benchmark_cases/<case_name>/
 
 执行完毕后，控制台及集中日志目录 `eval_workspace/<case_name>/logs/<timestamp>/overall_pipeline.log` 将生成最终签核对比表：
 ### 6. 基准案例签核功耗与效果对比
+### 基准案例签核与效果对比
 
 | Power Metric     | Original RTL     | Optimized RTL    | Delta (%)       |
 | :--------------- | :--------------- | :--------------- | :-------------- |
@@ -156,5 +196,11 @@ benchmark_cases/<case_name>/
 | **`reg_bank_case`** | 32-bit 时钟门控 | 时序逻辑时钟树关断 | **-36.14%** (332µW → 212µW) | 纯寄存器宽总线场景下门控收益显著 |
 | **`alu_operand_isolation_case`** | 操作数隔离 (Operand Isolation) | 组合逻辑杂散翻转阻断 | **-38.76%** (725µW → 444µW) | 针对深层组合逻辑 (占比 76%) 的最优低功耗架构 |
 | **`multi_file_alu_case`** | 16-bit 窄位宽时钟门控 | *(负优化对照组)* | **+4.17%** (696µW → 725µW) | 独立生成的时钟树开销超过 16-bit 节省量，演示平衡位宽未达标现象 |
+| 测试案例 | 变换技术 | Total 功耗变化 | 面积变化 (Stdcell) | 时序裕量变化 (Setup WS) | 核心结论与 Trade-off 关系 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`reg_bank_case`** | 32-bit 时钟门控 | **-36.14%** (332µW → 212µW) | **-7.35%** (2060µm² → 1909µm²) | -2.71 ns | 宽总线寄存器门控实现功耗与面积双重节省，裕量仍满足约束 |
+| **`alu_operand_isolation_case`** | 操作数隔离 (Operand Isolation) | **-38.76%** (725µW → 444µW) | +3.52% (4582µm² → 4743µm²) | **+1.83 ns** (关键路径改善) | 仅消耗 +3.5% 面积增量换取 -38.8% 功耗降低，且解耦关键路径改善时序，PDP 提升 47.8% |
+| **`multi_file_alu_case`** | 16-bit 窄位宽时钟门控 | **+4.17%** (696µW → 725µW) | +3.55% (4587µm² → 4750µm²) | +0.58 ns | *(负优化对照组)* 独立时钟树与门控逻辑开销超过 16-bit 收益，且未阻断前级 75% 组合功耗 |
+
 
 

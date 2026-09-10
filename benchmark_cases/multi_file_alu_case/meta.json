@@ -10,7 +10,6 @@
   "core_utilization": 25,
   "target_density_pct": 35,
   "sources_orig": ["alu_top.v", "alu_core.v"],
-  "sources_opt": ["alu_top.v", "alu_core.v"]
   "sources_opt": ["alu_top.v", "alu_core.v"],
   "description": "【负优化对照案例】：演示窄位宽 (16-bit) 寄存器在面临庞大深层组合逻辑 (占比 75%+) 时，由于门控单元及独立生成的时钟树分支开销大于时序逻辑节省收益，导致总功耗不降反增 (+4.17%) 的经典工程现象。"
 }
