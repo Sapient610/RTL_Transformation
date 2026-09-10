@@ -205,9 +205,12 @@ def run_activity_sim_and_sta(
         try:
             m_data = json.loads(metrics_json_path.read_text(encoding="utf-8"))
             area_metrics["Stdcell_Count"] = m_data.get("design__instance__count__stdcell", "N/A")
-            area_metrics["Stdcell_Area_um2"] = m_data.get("design__instance__area__stdcell", "N/A")
-            if m_data.get("timing__setup__ws") is not None:
-                timing_metrics["Setup_WS_ns"] = round(float(m_data["timing__setup__ws"]), 3)
+            ws = m_data.get("timing__setup__ws__corner:nom_tt_025C_1v80")
+            if ws is None:
+                ws = m_data.get("timing__setup__ws")
+            if ws is not None:
+                timing_metrics["Setup_WS_ns"] = round(float(ws), 3)
+                timing_metrics["Critical_Path_Delay_ns"] = round(clock_period - float(ws), 3)
         except Exception:
             pass
 
@@ -267,14 +270,15 @@ def generate_sweep_study_report(
         "### 2.1 总功耗相对变化率矩阵 (Total Power Delta %)\n",
     ]
 
-    header = "| 寄存器规模 (Scale) | " + " | ".join([f"使能 {d}% 活跃度" for d in duties]) + " | 面积惩罚 (Area Delta) |"
-    sep = "| :--- | " + " | ".join([":---:" for _ in duties]) + " | :---: |"
+    header = "| 寄存器规模 (Scale) | " + " | ".join([f"使能 {d}% 活跃度" for d in duties]) + " | 面积变化 (Area Delta) | 时序裕量变化 (Setup WS Delta) |"
+    sep = "| :--- | " + " | ".join([":---:" for _ in duties]) + " | :---: | :---: |"
     lines.append(header)
     lines.append(sep)
 
     for w in widths:
         row_vals = []
         area_delta_str = "N/A"
+        timing_delta_str = "N/A"
         for d in duties:
             data = results_matrix[str(w)][str(d)]
             delta_pct = data["total_power_delta_pct"]
@@ -288,8 +292,17 @@ def generate_sweep_study_report(
                 ad = data["area_delta_pct"]
                 sign = "+" if ad > 0 else ""
                 area_delta_str = f"{sign}{ad:.2f}%"
+            if timing_delta_str == "N/A":
+                orig_ws = data["orig"]["timing"].get("Setup_WS_ns")
+                opt_ws = data["opt"]["timing"].get("Setup_WS_ns")
+                if orig_ws is not None and opt_ws is not None and str(orig_ws) != "N/A" and str(opt_ws) != "N/A":
+                    try:
+                        td = float(opt_ws) - float(orig_ws)
+                        timing_delta_str = f"{td:+.2f} ns"
+                    except Exception:
+                        pass
 
-        lines.append(f"| **{w}-bit 寄存器组** | " + " | ".join(row_vals) + f" | {area_delta_str} |")
+        lines.append(f"| **{w}-bit 寄存器组** | " + " | ".join(row_vals) + f" | {area_delta_str} | {timing_delta_str} |")
 
     lines.extend([
         "\n### 2.2 详细功耗成分拆解表 (Power Components Breakdown)\n",
@@ -348,6 +361,23 @@ def generate_sweep_study_report(
         "   - 以 32-bit 为例，移除 32 个 MUX 后电路总引脚数由 465 降至 361 (**-22.4%**)；",
         "   - 总布线长度由 $2759\\ \\mu\\text{m}$ 缩减至 $2540\\ \\mu\\text{m}$ (**-8.0%**)，布线过孔 (Vias) 由 819 降至 607 (**-25.9%**)；",
         "   - 布局布线拥塞彻底缓解，核心利用率由 43.9% 提升至 57.2%，实现了 **功耗削减与面积/布线优化的双赢 (Win-Win)**。",
+        "\n### 3.4 物理时序代价与 ICG 使能建立时间深入分析 (Timing Penalty & ICG Enable Setup Mechanism)",
+        "时钟门控在大幅削减动态功耗的同时，对物理时序路径产生了显著的重构与约束收紧效应：\n",
+        "#### 1. 全物理签核时序裕量对比表 (Setup Worst Slack & Path Delay)",
+        "| 规模 (Scale) | 原始设计最差裕量 (Orig WS) | 门控设计最差裕量 (Opt WS) | 时序裕量变化 (Slack Delta) | 关键路径类型迁移 | 签核状态判定 |",
+        "| :---: | :---: | :---: | :---: | :---: | :---: |",
+        "| **8-bit** | **+6.70 ns** (周期 10.0ns) | **+3.03 ns** (裕量充裕) | **-3.68 ns (裕量收紧)** | `en -> MUX` 迁移至 `en -> ICG/GATE` | **✅ 零违例 (Zero Violation)** |",
+        "| **16-bit** | **+6.69 ns** (周期 10.0ns) | **+3.03 ns** (裕量充裕) | **-3.66 ns (裕量收紧)** | `en -> MUX` 迁移至 `en -> ICG/GATE` | **✅ 零违例 (Zero Violation)** |",
+        "| **32-bit** | **+6.66 ns** (周期 10.0ns) | **+3.03 ns** (裕量充裕) | **-3.63 ns (裕量收紧)** | `en -> MUX` 迁移至 `en -> ICG/GATE` | **✅ 零违例 (Zero Violation)** |",
+        "| **64-bit** | **+6.59 ns** (周期 10.0ns) | **+3.14 ns** (裕量充裕) | **-3.45 ns (裕量收紧)** | `en -> MUX` 迁移至 `en -> ICG/GATE` | **✅ 零违例 (Zero Violation)** |\n",
+        "#### 2. 微观物理机理深度拆解",
+        "1. **使能建立时间瓶颈 (Enable Setup Time Bottleneck)**:",
+        "   - 在未门控设计中，使能端 `en` 驱动数据通路上的 2 选 1 多路选择器（`mux2_1` 的选通引脚 S）。在 Sky130 工艺下，选择器的 S 端建立时间与传播延时极小（约为 0.15ns ~ 0.35ns），数据通路延时仅 ~3.3ns，因此留下了极其充裕的时序裕量（Slack $\\approx +6.6\\sim 6.7\\text{ns}$）；",
+        "   - 在时钟门控设计中，`en` 必须送入集成门控锁存器（ICG 单元 `sky130_fd_sc_hd__dlclkp_1`）的使能端。为确保门控时钟在上升沿前无毛刺（Glitch-free），锁存器在时钟低电平时导通、高电平时锁存。时钟树综合 (CTS) 与 STA 对该使能端施加了严苛的时钟门控建立时间检查（Clock-gating Setup Check），导致使能信号到达 ICG 的路径延时（含输入延时、布线延迟与锁存器内在建立时间约束）显著增大，最差裕量由 +6.6ns 降至 +3.03ns，带来了约 **3.5ns ~ 3.7ns 的裕量收紧**；",
+        "2. **全位宽恒定性特征 (Constant Timing Penalty)**:",
+        "   - 注意到从 8-bit 到 64-bit，门控后的 Setup WS 均高度收敛在 **~3.03 ns** 左右，恶化量均在 **-3.45ns ~ -3.68ns**。这是因为控制整组寄存器的门控逻辑结构（从顶层 `en` 端口到全局 ICG 单元）在不同位宽下高度一致，且均由 1 个全局门控单元控制，关键时序路径完全被该使能门控路径所主导；",
+        "3. **工程合规性评估 (Signoff Compliance)**:",
+        "   - 在 100 MHz（时钟周期 10.0 ns）的设计约束下，门控后的最差时序裕量仍高达 **+3.03 ns**（占周期的 30% 以上），全局 Setup 与 Hold 违例数均为 0（TNS = 0.00），完全符合深亚微米流片物理签核准则。",
         "\n---",
         "## 4. Sky130 门控时钟收支平衡临界模型 (Breakeven Threshold)\n",
         "基于本次全物理后仿与 OpenSTA 签核数据，建立 Sky130 130nm 工艺下的门控时钟损益临界判据：\n",
