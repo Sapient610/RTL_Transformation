@@ -1,0 +1,19 @@
+{
+  "design_name": "fir_top",
+  "clock_port": "clk",
+  "clock_period_ns": 10.0,
+  "clock_uncertainty_ns": 0.25,
+  "clock_transition_ns": 0.15,
+  "output_load_pf": 0.033442,
+  "input_delay_ns": 2.0,
+  "output_delay_ns": 2.0,
+  "core_utilization": 25,
+  "target_density_pct": 35,
+  "sources_orig": [
+    "fir_top.v"
+  ],
+  "sources_opt": [
+    "fir_top.v"
+  ],
+  "description": "\u57fa\u4e8e\u6570\u636e\u95e8\u63a7 (Data Gating) \u7684 4 \u62bd\u5934\u8f6c\u7f6e\u578b FIR \u6ee4\u6ce2\u5668"
+}
