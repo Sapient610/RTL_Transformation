@@ -468,14 +468,16 @@ def run_signoff_evaluation(
     reports_dir: Path,
     log_dir: Path,
     logger: logging.Logger,
-) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     logger.info("=" * 70)
-    logger.info(f">>> Step 4: Multi-Dimensional Signoff Analysis [{run_tag}] (Power, Timing, Area)")
+    logger.info(f">>> Step 4: Multi-Dimensional Signoff Analysis [{run_tag}] (Power, Timing, Area, Activity)")
     logger.info("=" * 70)
 
     power_rpt = reports_dir / f"{run_tag}_power.rpt"
     timing_rpt = reports_dir / f"{run_tag}_timing.rpt"
     area_rpt = reports_dir / f"{run_tag}_area.rpt"
+    activity_rpt = reports_dir / f"{run_tag}_activity.rpt"
+    activity_ann_rpt = reports_dir / f"{run_tag}_activity_annotation.rpt"
 
     sta_script = f"""
     read_liberty {lib_path}
@@ -492,6 +494,32 @@ def run_signoff_evaluation(
     report_worst_slack -max
     report_worst_slack -min
     report_tns
+
+    report_activity_annotation -report_annotated > {activity_ann_rpt}
+
+    # 导出详细信号与引脚翻转活动度报告
+    set act_file [open "{activity_rpt}" w]
+    puts $act_file "================================================================================"
+    puts $act_file "              OpenSTA Detailed Signal & Pin Activity Signoff Report             "
+    puts $act_file "================================================================================"
+    puts $act_file [format "%-35s | %-12s | %-18s | %-12s | %-8s" "Pin/Port Name" "Category" "Transition Density" "Static Prob" "Source"]
+    puts $act_file [string repeat "-" 95]
+    foreach port [get_ports *] {{
+        set pname [get_full_name $port]
+        set act [get_property $port activity]
+        if {{$act != ""}} {{
+            puts $act_file [format "%-35s | %-12s | %-18.4e | %-12.4f | %-8s" $pname "Port" [lindex $act 0] [lindex $act 1] [lindex $act 2]]
+        }}
+    }}
+    foreach pin [get_pins *] {{
+        set pname [get_full_name $pin]
+        set act [get_property $pin activity]
+        if {{$act != ""}} {{
+            puts $act_file [format "%-35s | %-12s | %-18.4e | %-12.4f | %-8s" $pname "Internal Pin" [lindex $act 0] [lindex $act 1] [lindex $act 2]]
+        }}
+    }}
+    close $act_file
+
     exit
     """
     sta_cmd_path = reports_dir / f"calc_signoff_{run_tag}.tcl"
@@ -614,8 +642,63 @@ Total Routed Vias:           {area_metrics['Routed_Vias']}
     logger.info(f"[*] Signoff Power Report:  {power_rpt}")
     logger.info(f"[*] Signoff Timing Report: {timing_rpt}")
     logger.info(f"[*] Signoff Area Report:   {area_rpt}")
+    # 4. 解析信号与引脚翻转活动度指标
+    activity_metrics: Dict[str, Any] = {
+        "Annotated_Pins": "N/A",
+        "Unannotated_Pins": "N/A",
+        "Clock_Transition_Density": "N/A",
+        "Enable_Static_Probability": "N/A",
+        "Avg_Data_In_Transition_Density": "N/A",
+        "Avg_Data_Out_Transition_Density": "N/A",
+    }
+    if activity_ann_rpt.exists():
+        ann_text = activity_ann_rpt.read_text(encoding="utf-8")
+        for line in ann_text.splitlines():
+            line_s = line.strip()
+            if line_s.startswith("vcd") or line_s.startswith("saif"):
+                parts = line_s.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    activity_metrics["Annotated_Pins"] = int(parts[1])
+            elif line_s.startswith("unannotated"):
+                parts = line_s.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    activity_metrics["Unannotated_Pins"] = int(parts[1])
 
     return pwr_metrics, timing_metrics, area_metrics
+    if activity_rpt.exists():
+        act_text = activity_rpt.read_text(encoding="utf-8")
+        din_densities = []
+        dout_densities = []
+        for line in act_text.splitlines():
+            if "|" not in line or "Pin/Port Name" in line or "---" in line:
+                continue
+            cols = [c.strip() for c in line.split("|")]
+            if len(cols) >= 5:
+                pname = cols[0]
+                try:
+                    tdens = float(cols[2])
+                    sprob = float(cols[3])
+                except ValueError:
+                    continue
+                if pname == clock_port:
+                    activity_metrics["Clock_Transition_Density"] = tdens
+                elif pname == "en" or pname.endswith("/en"):
+                    activity_metrics["Enable_Static_Probability"] = sprob
+                elif "data_in" in pname or "din" in pname:
+                    din_densities.append(tdens)
+                elif "data_out" in pname or "dout" in pname:
+                    dout_densities.append(tdens)
+        if din_densities:
+            activity_metrics["Avg_Data_In_Transition_Density"] = round(sum(din_densities) / len(din_densities), 4)
+        if dout_densities:
+            activity_metrics["Avg_Data_Out_Transition_Density"] = round(sum(dout_densities) / len(dout_densities), 4)
+
+    logger.info(f"[*] Signoff Power Report:    {power_rpt}")
+    logger.info(f"[*] Signoff Timing Report:   {timing_rpt}")
+    logger.info(f"[*] Signoff Area Report:     {area_rpt}")
+    logger.info(f"[*] Signoff Activity Report: {activity_rpt}")
+
+    return pwr_metrics, timing_metrics, area_metrics, activity_metrics
 
 
 # -----------------------------------------------------------------------------
@@ -788,6 +871,38 @@ def generate_ppa_summary_report(
         "- **物理意义**: PDP（功耗延迟积）衡量了电路完成单次逻辑操作所需的能量损耗。PDP 下降代表芯片在全局能量利用效率上获得了本质提升，而非单纯牺牲时钟性能换取低功耗。",
     ])
 
+    # 3. 信号翻转活动度签核分析
+    orig_act = orig.get("activity", {})
+    opt_act = opt.get("activity", {})
+    act_rows = [
+        ("Annotated Pins (VCD反标引脚数)", orig_act.get("Annotated_Pins", "N/A"), opt_act.get("Annotated_Pins", "N/A"), "", False),
+        ("Unannotated Pins (未反标引脚数)", orig_act.get("Unannotated_Pins", "N/A"), opt_act.get("Unannotated_Pins", "N/A"), "", False),
+        ("Clock Transition Density (时钟翻转密度)", orig_act.get("Clock_Transition_Density", "N/A"), opt_act.get("Clock_Transition_Density", "N/A"), "trans/s", False),
+        ("Enable Static Probability (使能静态概率/占空比)", orig_act.get("Enable_Static_Probability", "N/A"), opt_act.get("Enable_Static_Probability", "N/A"), "", False),
+        ("Avg Data In Transition Density (数据输入平均翻转)", orig_act.get("Avg_Data_In_Transition_Density", "N/A"), opt_act.get("Avg_Data_In_Transition_Density", "N/A"), "trans/s", False),
+        ("Avg Data Out Transition Density (数据输出平均翻转)", orig_act.get("Avg_Data_Out_Transition_Density", "N/A"), opt_act.get("Avg_Data_Out_Transition_Density", "N/A"), "trans/s", False),
+    ]
+    md_lines.extend([
+        "\n---",
+        "## 3. 信号翻转活动度签核报告 (Signal & Pin Activity Signoff)\n",
+        "| 分析维度 (Category) | 信号/引脚指标 (Signal Metric) | 原始设计 (Original) | 优化设计 (Optimized) | 变化量 (Delta) |",
+        "| :--- | :--- | :--- | :--- | :--- |",
+    ])
+    for idx, (label, o, m, unit, is_s) in enumerate(act_rows):
+        delta_str, _ = calc_delta(o, m, is_s)
+        u_o = f"{o} {unit}".strip() if o != "N/A" else "N/A"
+        u_m = f"{m} {unit}".strip() if m != "N/A" else "N/A"
+        cat_header = "**Activity (翻转活动度)**" if idx == 0 else ""
+        md_lines.append(f"| {cat_header} | {label} | {u_o} | {u_m} | **{delta_str}** |")
+
+    md_lines.extend([
+        "\n> [!TIP]",
+        f"> 详细引脚级翻转统计已分别导出至:  ",
+        f"> - 原始设计活动度报告: [`orig_activity.rpt`](file://{reports_dir / 'orig_activity.rpt'})  ",
+        f"> - 优化设计活动度报告: [`opt_activity.rpt`](file://{reports_dir / 'opt_activity.rpt'})  ",
+        f"> - 反标覆盖率详表: [`orig_activity_annotation.rpt`](file://{reports_dir / 'orig_activity_annotation.rpt'}), [`opt_activity_annotation.rpt`](file://{reports_dir / 'opt_activity_annotation.rpt'})"
+    ])
+
     summary_text = "\n".join(md_lines)
 
     (reports_dir / "ppa_summary.md").write_text(summary_text, encoding="utf-8")
@@ -839,6 +954,19 @@ def main():
 
     case_name = case_dir.name
     workspace = Path(args.workspace).resolve() if args.workspace else Path("./eval_workspace").resolve() / case_name
+    if args.workspace:
+        workspace = Path(args.workspace).resolve()
+    else:
+        cwd = Path.cwd().resolve()
+        try:
+            rel = case_dir.relative_to(cwd / "cases")
+            workspace = cwd / "eval_workspace" / rel
+        except ValueError:
+            try:
+                rel = case_dir.relative_to(cwd / "benchmark_cases")
+                workspace = cwd / "eval_workspace" / rel
+            except ValueError:
+                workspace = cwd / "eval_workspace" / case_name
     workspace.mkdir(parents=True, exist_ok=True)
 
     # 创建清晰解耦的功能子目录
@@ -897,7 +1025,7 @@ def main():
         )
 
         # Step 4: 功耗、时序与物理面积签核分析 (输出至 reports/)
-        pwr_m, timing_m, area_m = run_signoff_evaluation(
+        pwr_m, timing_m, area_m, act_m = run_signoff_evaluation(
             tag, top_module, clock_port, clock_period, netlist, spef, vcd, metrics_json_path, lib_path, blackbox_path, reports_dir, log_dir, logger
         )
 
@@ -905,6 +1033,7 @@ def main():
             "power": pwr_m,
             "timing": timing_m,
             "area": area_m,
+            "activity": act_m,
         }
 
     # 6. Step 5: 综合 PPA 报告与 Trade-off 关系分析 (输出至 reports/ppa_summary.md)

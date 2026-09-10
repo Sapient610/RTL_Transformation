@@ -1,0 +1,14 @@
+module reg_bank (
+    input  wire        clk,
+    input  wire        rst_n,
+    input  wire        en,
+    input  wire [63:0] data_in,
+    output reg  [63:0] data_out
+);
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            data_out <= 64'd0;
+        else if (en)
+            data_out <= data_in;
+    end
+endmodule
