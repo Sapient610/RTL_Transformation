@@ -1,3 +1,8 @@
 demo/eval_workspace
 eval_workspace/
 __pycache__/
+*.pyc
+*.log
+*.vvp
+*.vcd
+.system_generated/
