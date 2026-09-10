@@ -58,6 +58,8 @@ def run_formal_lec(
     equiv_induct
     equiv_status -assert
     """
+    formal_dir = formal_dir.resolve()
+    log_dir = log_dir.resolve()
     script_path = formal_dir / "lec.ys"
     script_path.write_text(lec_script, encoding="utf-8")
     lec_log = log_dir / "yosys_lec.log"

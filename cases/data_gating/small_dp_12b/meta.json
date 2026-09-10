@@ -1,0 +1,21 @@
+{
+  "design_name": "small_dp_top",
+  "clock_port": "clk",
+  "clock_period_ns": 10.0,
+  "clock_uncertainty_ns": 0.25,
+  "clock_transition_ns": 0.15,
+  "output_load_pf": 0.033442,
+  "input_delay_ns": 2.0,
+  "output_delay_ns": 2.0,
+  "core_utilization": 25,
+  "target_density_pct": 35,
+  "sources_orig": [
+    "small_dp_top.v",
+    "small_dp_core.v"
+  ],
+  "sources_opt": [
+    "small_dp_top.v",
+    "small_dp_core.v"
+  ],
+  "description": "\u57fa\u4e8e\u6570\u636e\u95e8\u63a7 (Data Gating) \u7684 12-bit \u5c0f\u578b\u6570\u636e\u901a\u8def\u6848\u4f8b"
+}
