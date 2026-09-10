@@ -3,7 +3,7 @@
 """
 ===============================================================================
 通用多文件 RTL 变换自动化物理评估基座 (Evaluation Platform CLI Entry Point)
-evaluate_case.py
+script/evaluate_case.py
 
 本入口脚本负责解析命令行参数并调度 src/ 模块执行全流程闭环：
   Step 1: Yosys 层次化形式等价性验证 (Formal LEC) - 熔断保护
@@ -20,6 +20,11 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
+
+# 动态将项目根目录加入 sys.path，确保无论从何处启动均可正确导入 src 模块
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.common.env import ensure_devshell_environment
 from src.common.logger import setup_logging, cleanup_legacy_root_files
@@ -52,12 +57,11 @@ def evaluate_case(
     if workspace_arg:
         workspace = Path(workspace_arg).resolve()
     else:
-        cwd = Path.cwd().resolve()
         try:
-            rel = case_dir.relative_to(cwd / "cases")
-            workspace = cwd / "eval_workspace" / rel
+            rel = case_dir.relative_to(PROJECT_ROOT / "cases")
+            workspace = PROJECT_ROOT / "eval_workspace" / rel
         except ValueError:
-            workspace = cwd / "eval_workspace" / case_name
+            workspace = PROJECT_ROOT / "eval_workspace" / case_name
     workspace.mkdir(parents=True, exist_ok=True)
 
     sim_dir = workspace / "sim"

@@ -497,14 +497,16 @@ def run_clock_gating_sweep(
     study_rpt_path = sweep_workspace / "clock_gating_study_report.md"
     generate_sweep_study_report(sweep_results, study_rpt_path, widths, duties)
 
-    root_rpt_path = Path("./clock_gating_study_report.md").resolve()
-    generate_sweep_study_report(sweep_results, root_rpt_path, widths, duties)
+    project_root = Path(__file__).resolve().parent.parent.parent
+    doc_rpt_path = project_root / "doc" / "clock_gating_study_report.md"
+    doc_rpt_path.parent.mkdir(parents=True, exist_ok=True)
+    generate_sweep_study_report(sweep_results, doc_rpt_path, widths, duties)
 
     logger.info("=" * 80)
     logger.info("Clock Gating Parametric Sweep completed successfully!")
     logger.info(f"Results Matrix JSON: {matrix_json_path}")
     logger.info(f"Comprehensive Study Report: {study_rpt_path}")
-    logger.info(f"Root Study Report: {root_rpt_path}")
+    logger.info(f"Doc Study Report: {doc_rpt_path}")
     logger.info("=" * 80)
 
 
