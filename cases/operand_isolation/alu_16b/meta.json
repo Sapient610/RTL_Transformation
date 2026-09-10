@@ -1,0 +1,21 @@
+{
+  "design_name": "alu_top",
+  "clock_port": "clk",
+  "clock_period_ns": 10.0,
+  "clock_uncertainty_ns": 0.25,
+  "clock_transition_ns": 0.15,
+  "output_load_pf": 0.033442,
+  "input_delay_ns": 2.0,
+  "output_delay_ns": 2.0,
+  "core_utilization": 25,
+  "target_density_pct": 35,
+  "sources_orig": [
+    "alu_top.v",
+    "alu_core.v"
+  ],
+  "sources_opt": [
+    "alu_top.v",
+    "alu_core.v"
+  ],
+  "description": "基于操作数隔离 (Operand Isolation) 的 16-bit ALU 案例"
+}

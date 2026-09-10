@@ -48,10 +48,12 @@
 RTL_Transformation/
 ├── script/                     # 【命令行执行脚本】
 │   ├── evaluate_case.py        # 单案例全流程自动化物理评估 CLI
-│   └── sweep_clock_gating.py   # 门控时钟 Scale × Activity 二维扫描 CLI
+│   ├── sweep_clock_gating.py   # 门控时钟 Scale × Activity 二维扫描 CLI
+│   └── sweep_operand_isolation.py # 操作数隔离 Scale × Valid Duty × Activity 三维扫描 CLI
 ├── doc/                        # 【项目文档与研究报告】
 │   ├── Evaluation_Platform.md  # 通用多文件 RTL 变换评估基座架构规范
-│   └── clock_gating_study_report.md # 门控时钟多维度敏感度与物理损益平衡研报
+│   ├── clock_gating_study_report.md # 门控时钟多维度敏感度与物理损益平衡研报
+│   └── operand_isolation_study_report.md # 操作数隔离多维度影响因素与损益临界研报
 ├── src/                        # 【核心功能实现包】
 │   ├── common/                 # 基础设施与通用辅助
 │   │   ├── env.py              # AppImage DevShell 自托管环境探测与命令重定向
@@ -65,10 +67,11 @@ RTL_Transformation/
 │   │   ├── signoff.py          # Step 4: OpenSTA 静态时序、功耗与引脚翻转活动度签核
 │   │   └── report.py           # Step 5: 全维度 PPA 报表生成与多维权衡深度分析
 │   └── analysis/               # 高级研究实验与多维参数扫描
-│       └── sweep_clock_gating.py # 门控时钟全物理后仿扫描引擎与收支平衡模型构建
+│       ├── sweep_clock_gating.py # 门控时钟全物理后仿扫描引擎与收支平衡模型构建
+│       └── sweep_operand_isolation.py # 操作数隔离全物理后仿扫描引擎与收支平衡模型构建
 ├── cases/                      # 【规范化分类低功耗测试用例库】
 │   ├── clock_gating/           # 门控时钟用例 (8b, 16b, 32b, 64b)
-│   ├── operand_isolation/      # 操作数隔离用例 (alu_operand_isolation)
+│   ├── operand_isolation/      # 操作数隔离用例 (alu_8b, alu_16b, alu_32b, alu_64b)
 │   └── contrast_cases/         # 负优化与工程对照组 (multi_file_alu)
 ├── eval_workspace/             # 【物理运行与签核工作空间】(按用例与功能解耦)
 ├── templates/                  # 测试平台与约束参考模板
@@ -209,6 +212,9 @@ eval_workspace/<category>/<case_name>/
 
 # 4. 运行门控时钟二维全物理参数化扫描与收支平衡研究 (Scale × Activity)
 ./script/sweep_clock_gating.py
+
+# 5. 运行操作数隔离三维全物理参数化扫描与损益临界模型研究 (Scale × Valid Duty × Data Activity)
+./script/sweep_operand_isolation.py
 ```
 
 执行完毕后，控制台及集中日志目录 `eval_workspace/<case_path>/logs/<timestamp>/overall_pipeline.log` 将输出最终多维签核报告与 Trade-off 关系分析。
@@ -245,7 +251,27 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 10. 详细技术文档与报告链接
+## 10. 操作数隔离多维度影响因素研究成果 (Scale × Duty × Activity)
+
+通过 `script/sweep_operand_isolation.py` 对 4 种位宽（8b/16b/32b/64b）× 4 种有效概率（5%/20%/50%/80%）× 3 种总线活跃度（10%/30%/60%）共 **48 组三维全物理后仿矩阵** 进行了签核评估（完整技术研报详见 [`doc/operand_isolation_study_report.md`](doc/operand_isolation_study_report.md)）：
+
+### 高活跃度 (Activity = 60%) 总功耗变化率
+| 运算规模 (Scale) | 有效计算 5% (95% 空闲) | 有效计算 20% (80% 空闲) | 有效计算 50% (50% 空闲) | 有效计算 80% (20% 空闲) | 面积增量 (Area Delta) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **8-bit ALU** | **-42.47%** | **-19.17%** | +3.64% | +7.23% | +3.11% |
+| **16-bit ALU** | **-48.79%** | **-20.50%** | +6.92% | +10.30% | +3.52% |
+| **32-bit ALU** | **-51.19%** | **-21.85%** | +6.92% | +10.69% | +4.27% |
+| **64-bit ALU** | **-54.44%** | **-24.71%** | +4.04% | +7.66% | +3.03% |
+
+### 定量临界模型与物理结论
+1. **纯组合功耗削减率**：在空闲突发场景（Valid=5%）下，组合逻辑功耗最高可直接削减 **-56.9% ~ -71.9%**；
+2. **临界空闲率判定**：只有当计算单元空闲时间占比超过 **25% ~ 30%**（即 Valid Duty $\le 70\%$）且总线具有中高频跳变（Activity $\ge 30\%$）时，操作数隔离方能体现净节能收益；
+3. **物理代价**：与时钟门控（省 MUX 反而缩小面积）不同，操作数隔离需在前级输入端串联隔离门，带来 **+3.0% ~ +4.3%** 的额外标准单元面积。
+
+---
+
+## 11. 详细技术文档与报告链接
 
 - [通用多文件 RTL 变换自动化评估基座架构规范](doc/Evaluation_Platform.md)
 - [门控时钟多维度敏感度与物理损益平衡定量分析报告](doc/clock_gating_study_report.md)
+- [操作数隔离多维度影响因素与损益临界模型深度研报](doc/operand_isolation_study_report.md)
