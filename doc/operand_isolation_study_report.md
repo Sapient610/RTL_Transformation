@@ -24,6 +24,7 @@
 
 > **注**：负百分比表示功耗下降（节能收益），正百分比表示功耗上升（负优化）。
 
+![ALU 操作数隔离各位宽在不同有效计算概率下的总功耗变化率](./images/operand_isolation/oi_total_power_delta.svg)
 
 #### 数据总线翻转活跃度: 10% (Data Activity = 10%)
 | 运算规模 (Scale) | 有效计算 5% (95% 空闲) | 有效计算 20% (80% 空闲) | 有效计算 50% (50% 空闲) | 有效计算 80% (20% 空闲) | 面积变化 (Area Delta) | 时序惩罚 (Timing Slack Delta) |
@@ -50,6 +51,8 @@
 | **64-bit ALU** | **-54.44%** | **-24.71%** | <span style='color:red'>**+4.04%**</span> | <span style='color:red'>**+7.66%**</span> | +3.03% | +0.50 ns |
 
 ### 2.2 组合逻辑功耗 (Combinational Power) 专项削减率
+
+![ALU 操作数隔离纯组合逻辑功耗专项削减对比](./images/operand_isolation/oi_comb_power_reduction.svg)
 
 操作数隔离的主要机理是拦截组合逻辑树中的杂散翻转，以下为纯组合逻辑功耗在不同数据活动率下的绝对削减情况：
 

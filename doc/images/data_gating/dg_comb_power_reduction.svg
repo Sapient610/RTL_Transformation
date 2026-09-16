@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 440" width="840" height="440">
+<defs>
+  <style>
+    .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; fill: #64748b; }
+    .axis-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; font-weight: 600; fill: #334155; }
+    .tick-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; fill: #64748b; }
+    .data-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 700; }
+    .legend-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 500; fill: #334155; }
+    .grid-line { stroke: #f1f5f9; stroke-width: 1; }
+    .zero-line { stroke: #475569; stroke-width: 1.5; stroke-dasharray: 4,4; }
+    .axis-line { stroke: #cbd5e1; stroke-width: 1.5; }
+  </style>
+  <linearGradient id="grad-green" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#10b981" />
+    <stop offset="100%" stop-color="#059669" />
+  </linearGradient>
+  <linearGradient id="grad-blue" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#0ea5e9" />
+    <stop offset="100%" stop-color="#0284c7" />
+  </linearGradient>
+  <linearGradient id="grad-amber" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#f59e0b" />
+    <stop offset="100%" stop-color="#d97706" />
+  </linearGradient>
+  <linearGradient id="grad-red" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#f43f5e" />
+    <stop offset="100%" stop-color="#e11d48" />
+  </linearGradient>
+</defs>
+<rect width="840" height="440" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+<text x="32" y="38" class="title">Sky130 FIR 滤波器数据门控：全并行乘法阵列组合功耗专项削减对比</text><text x="32" y="58" class="subtitle">典型突发工况 (Valid Duty = 5%, Data Activity = 60%) | 广播冻结切断乘法阵列毛刺，组合功耗骤降 ~72%</text><line x1="90" y1="350" x2="790" y2="350" class="zero-line"/><text x="80" y="354" text-anchor="end" class="tick-label">0</text><line x1="90" y1="294" x2="790" y2="294" class="grid-line"/><text x="80" y="298" text-anchor="end" class="tick-label">300</text><line x1="90" y1="237" x2="790" y2="237" class="grid-line"/><text x="80" y="241" text-anchor="end" class="tick-label">600</text><line x1="90" y1="180" x2="790" y2="180" class="grid-line"/><text x="80" y="184" text-anchor="end" class="tick-label">900</text><line x1="90" y1="123" x2="790" y2="123" class="grid-line"/><text x="80" y="127" text-anchor="end" class="tick-label">1200</text><rect x="115.5" y="307" width="54" height="43" rx="3" fill="#64748b" opacity="0.85"/><text x="142.5" y="301" text-anchor="middle" class="data-label" fill="#334155">231 uW</text><rect x="185.5" y="337" width="54" height="13" rx="3" fill="#10b981" opacity="0.9"/><text x="212.5" y="331" text-anchor="middle" class="data-label" fill="#047857">71 uW</text><rect x="139.5" y="273" width="76" height="18" rx="4" fill="#ecfdf5" stroke="#10b981" stroke-width="1"/><text x="177.5" y="286" text-anchor="middle" class="data-label" fill="#065f46">-69.1%</text><text x="177.5" y="374" text-anchor="middle" class="axis-label">4-Tap FIR</text><text x="142.5" y="388" text-anchor="middle" class="tick-label">原始乘法功耗</text><text x="212.5" y="388" text-anchor="middle" class="tick-label">门控乘法功耗</text><rect x="290.5" y="243" width="54" height="107" rx="3" fill="#64748b" opacity="0.85"/><text x="317.5" y="237" text-anchor="middle" class="data-label" fill="#334155">567 uW</text><rect x="360.5" y="321" width="54" height="29" rx="3" fill="#10b981" opacity="0.9"/><text x="387.5" y="315" text-anchor="middle" class="data-label" fill="#047857">156 uW</text><rect x="314.5" y="209" width="76" height="18" rx="4" fill="#ecfdf5" stroke="#10b981" stroke-width="1"/><text x="352.5" y="222" text-anchor="middle" class="data-label" fill="#065f46">-72.5%</text><text x="352.5" y="374" text-anchor="middle" class="axis-label">8-Tap FIR</text><text x="317.5" y="388" text-anchor="middle" class="tick-label">原始乘法功耗</text><text x="387.5" y="388" text-anchor="middle" class="tick-label">门控乘法功耗</text><rect x="465.5" y="198" width="54" height="152" rx="3" fill="#64748b" opacity="0.85"/><text x="492.5" y="192" text-anchor="middle" class="data-label" fill="#334155">806 uW</text><rect x="535.5" y="310" width="54" height="40" rx="3" fill="#10b981" opacity="0.9"/><text x="562.5" y="304" text-anchor="middle" class="data-label" fill="#047857">216 uW</text><rect x="489.5" y="164" width="76" height="18" rx="4" fill="#ecfdf5" stroke="#10b981" stroke-width="1"/><text x="527.5" y="177" text-anchor="middle" class="data-label" fill="#065f46">-73.2%</text><text x="527.5" y="374" text-anchor="middle" class="axis-label">12-Tap FIR</text><text x="492.5" y="388" text-anchor="middle" class="tick-label">原始乘法功耗</text><text x="562.5" y="388" text-anchor="middle" class="tick-label">门控乘法功耗</text><rect x="640.5" y="129" width="54" height="221" rx="3" fill="#64748b" opacity="0.85"/><text x="667.5" y="123" text-anchor="middle" class="data-label" fill="#334155">1170 uW</text><rect x="710.5" y="289" width="54" height="61" rx="3" fill="#10b981" opacity="0.9"/><text x="737.5" y="283" text-anchor="middle" class="data-label" fill="#047857">326 uW</text><rect x="664.5" y="95" width="76" height="18" rx="4" fill="#ecfdf5" stroke="#10b981" stroke-width="1"/><text x="702.5" y="108" text-anchor="middle" class="data-label" fill="#065f46">-72.1%</text><text x="702.5" y="374" text-anchor="middle" class="axis-label">16-Tap FIR</text><text x="667.5" y="388" text-anchor="middle" class="tick-label">原始乘法功耗</text><text x="737.5" y="388" text-anchor="middle" class="tick-label">门控乘法功耗</text><rect x="250" y="412" width="16" height="12" rx="2" fill="#64748b"/><text x="274" y="422" class="legend-text">原始未门控乘法阵列功耗</text><rect x="470" y="412" width="16" height="12" rx="2" fill="#10b981"/><text x="494" y="422" class="legend-text">门控后乘法阵列组合功耗</text></svg>

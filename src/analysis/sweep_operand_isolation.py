@@ -304,6 +304,7 @@ def generate_oi_study_report(
         "## 2. 三维全物理签核测试矩阵 (PPA Results Matrix)\n",
         "### 2.1 总功耗相对变化率矩阵 (Total Power Delta %)\n",
         "> **注**：负百分比表示功耗下降（节能收益），正百分比表示功耗上升（负优化）。\n",
+        "![ALU 操作数隔离各位宽在不同有效计算概率下的总功耗变化率](./images/operand_isolation/oi_total_power_delta.svg)\n",
     ]
 
     def to_uw(val):
@@ -345,6 +346,7 @@ def generate_oi_study_report(
 
     lines.extend([
         "\n### 2.2 组合逻辑功耗 (Combinational Power) 专项削减率\n",
+        "![ALU 操作数隔离纯组合逻辑功耗专项削减对比](./images/operand_isolation/oi_comb_power_reduction.svg)\n",
         "操作数隔离的主要机理是拦截组合逻辑树中的杂散翻转，以下为纯组合逻辑功耗在不同数据活动率下的绝对削减情况：\n",
         "| 规模 | 有效概率 | 数据活动率 | 原始组合功耗 (uW) | 优化组合功耗 (uW) | 组合功耗变化率 (Delta %) | 原始总功耗 (uW) | 优化总功耗 (uW) | 收益判定 |",
         "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"

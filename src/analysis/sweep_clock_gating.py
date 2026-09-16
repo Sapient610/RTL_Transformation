@@ -268,6 +268,7 @@ def generate_sweep_study_report(
         "---",
         "## 2. 二维全物理签核测试矩阵 (PPA Results Matrix)\n",
         "### 2.1 总功耗相对变化率矩阵 (Total Power Delta %)\n",
+        "![时钟门控各规模在不同使能活跃度下的总功耗变化率](./images/clock_gating/cg_total_power_delta.svg)\n",
     ]
 
     header = "| 寄存器规模 (Scale) | " + " | ".join([f"使能 {d}% 活跃度" for d in duties]) + " | 面积变化 (Area Delta) | 时序裕量变化 (Setup WS Delta) |"
@@ -306,6 +307,7 @@ def generate_sweep_study_report(
 
     lines.extend([
         "\n### 2.2 详细功耗成分拆解表 (Power Components Breakdown)\n",
+        "![时钟门控原始 vs 门控功耗成分拆解对比](./images/clock_gating/cg_power_breakdown.svg)\n",
         "| 规模 | 活跃度 | 原始总功耗 (uW) | 优化总功耗 (uW) | 原始时钟功耗 (uW) | 优化时钟功耗 (uW) | 原始时序功耗 (uW) | 优化时序功耗 (uW) | 收益判定 |",
         "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
     ])
@@ -346,6 +348,7 @@ def generate_sweep_study_report(
         "- **原始设计 (`src_orig`) - MUX-DFF 架构**: Sky130 标准单元库中 D 触发器无硬件使能引脚。为了在 `en == 0` 时维持原值保持，逻辑综合工具（Yosys）必须在**每个触发器的 D 输入端前级插入一个 2 选 1 数据选择器 (`sky130_fd_sc_hd__mux2_1`)**，以实现 $D = en \\ ?\\ data\\_in : data\\_out$ 的数据反馈环。对于 $N$-bit 寄存器组，原始设计消耗了 **$N$ 个独立的 MUX2 单元**。",
         "- **门控设计 (`src_opt`) - Gated-Clock 架构**: 使能控制被迁移至时钟生成网络（生成 `gated_clk`），每个触发器的 D 端直接连接输入数据 $data\\_in$。因此，**数据通路上所有的 $N$ 个 MUX2 单元被彻底移除**，取而代之的是在时钟根部引入的 **1 个全局 ICG 锁存单元 (`dlxtn_1` + `and2_2`)** 以及若干 CTS 平衡缓冲器。\n",
         "#### 2. 全物理签核面积增减分解表\n",
+        "![时钟门控标准单元面积增减微观分解](./images/clock_gating/cg_area_breakdown.svg)\n",
         "| 规模 | 消除 MUX2 节省面积 (`comb`) | 新增 ICG 单元面积 (`seq`) | CTS 树平衡缓冲器 (`clkbuf`) | 净面积变化 ($\\Delta$ Area) | 面积变化率 |",
         "| :---: | :---: | :---: | :---: | :---: | :---: |",
         "| **8-bit** | **$-82.58\\ \\mu\\text{m}^2$** (省 8 个 MUX) | $+15.01\\ \\mu\\text{m}^2$ | $+150.14\\ \\mu\\text{m}^2$ | **$+81.33\\ \\mu\\text{m}^2$** | **+14.19% (面积膨胀)** |",

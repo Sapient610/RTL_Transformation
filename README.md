@@ -239,10 +239,12 @@ eval_workspace/<category>/<case_name>/
 
 通过 `script/sweep_clock_gating.py` 对 4 种位宽规模（8b/16b/32b/64b）与 4 种使能活跃度（5%/20%/50%/80%）共 16 组矩阵进行了全物理后仿扫描（完整技术研报详见 [`doc/clock_gating_study_report.md`](doc/clock_gating_study_report.md)）：
 
-### 总功耗变化率二维矩阵 (Total Power Delta %)
+#### 总功耗变化率二维矩阵 (Total Power Delta %)
+
+![时钟门控各规模在不同使能活跃度下的总功耗变化率](doc/images/clock_gating/cg_total_power_delta.svg)
 
 | 寄存器规模 (Scale) | 使能 5% 活跃度 | 使能 20% 活跃度 | 使能 50% 活跃度 | 使能 80% 活跃度 | 面积变化 (Area Delta) | 时序裕量变化 (Setup WS) | 损益状态判定 |
-| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 | **8-bit 寄存器组** | <span style="color:red">**+26.13%** (负优化)</span> | <span style="color:red">**+33.61%** (负优化)</span> | <span style="color:red">**+51.52%** (负优化)</span> | <span style="color:red">**+70.50%** (负优化)</span> | **+14.19%** (膨胀) | **-3.68 ns** | **全活跃度区间净亏损** |
 | **16-bit 寄存器组** | **-9.52%** (微弱收益) | **-1.06%** (临界平衡) | <span style="color:red">**+16.19%** (负优化)</span> | <span style="color:red">**+34.82%** (负优化)</span> | **0.00%** (持平) | **-3.66 ns** | **收支平衡临界过渡点** |
 | **32-bit 寄存器组** | **-39.04%** (显著收益) | **-24.33%** (显著收益) | **-6.27%** (小幅收益) | <span style="color:red">**+11.34%** (负优化)</span> | **-7.35%** (缩小) | **-3.63 ns** | **实用正收益区（活跃度 <60%）** |
@@ -261,6 +263,9 @@ eval_workspace/<category>/<case_name>/
 通过 `script/sweep_operand_isolation.py` 对 4 种位宽（8b/16b/32b/64b）× 4 种有效概率（5%/20%/50%/80%）× 3 种总线活跃度（10%/30%/60%）共 **48 组三维全物理后仿矩阵** 进行了签核评估（完整技术研报详见 [`doc/operand_isolation_study_report.md`](doc/operand_isolation_study_report.md)）：
 
 ### 高活跃度 (Activity = 60%) 总功耗变化率与 PPA
+
+![ALU 操作数隔离各位宽在不同有效计算概率下的总功耗变化率](doc/images/operand_isolation/oi_total_power_delta.svg)
+
 | 运算规模 (Scale) | 有效计算 5% (95% 空闲) | 有效计算 20% (80% 空闲) | 有效计算 50% (50% 空闲) | 有效计算 80% (20% 空闲) | 面积增量 (Area Delta) | 时序裕量变化 (Setup WS) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **8-bit ALU** | **-42.47%** | **-19.17%** | +3.64% | +7.23% | +3.11% | **-0.05 ns** |
@@ -280,6 +285,9 @@ eval_workspace/<category>/<case_name>/
 针对真实 DSP 与音频处理中功耗密集的有限冲激响应滤波器，通过 `script/sweep_data_gating.py` 对 4 种转置型 FIR 抽头规模（4/8/12/16-Tap）× 4 种采样有效率（5%/20%/50%/80%）× 3 种总线翻转率（10%/30%/60%）共 **48 组三维全物理后仿矩阵** 进行了系统性签核评估（完整技术研报详见 [`doc/data_gating_study_report.md`](doc/data_gating_study_report.md)）：
 
 ### 高活跃度 (Activity = 60%) 总功耗相对变化率矩阵
+
+![FIR 滤波器数据门控各抽头在不同有效率下的总功耗变化率](doc/images/data_gating/dg_total_power_delta.svg)
+
 | 滤波器抽头规模 (Taps) | 有效计算 5% (95% 空闲) | 有效计算 20% (80% 空闲) | 有效计算 50% (50% 空闲) | 有效计算 80% (20% 空闲) | 单元增量 / 面积变化 | 关键路径延迟 (Orig → Opt) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **4-Tap FIR** | **-23.76%** (显著收益) | **-11.47%** (显著收益) | **-1.25%** (轻微收益) | <span style="color:red">**+3.42%** (高频反噬)</span> | +20 门 / +2.16% | 6.41 ns → 6.63 ns (-0.22 ns 延时) |

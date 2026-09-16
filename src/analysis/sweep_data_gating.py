@@ -303,6 +303,7 @@ def generate_dg_study_report(
         "## 2. 三维全物理签核测试矩阵 (PPA Results Matrix)\n",
         "### 2.1 总功耗相对变化率矩阵 (Total Power Delta %)\n",
         "> **注**：负百分比表示功耗下降（节能正收益，绿色加粗），正百分比表示功耗上升（开销反噬负收益，红色标出）。\n",
+        "![FIR 滤波器数据门控各抽头在不同有效率下的总功耗变化率](./images/data_gating/dg_total_power_delta.svg)\n",
     ]
 
     def to_uw(val):
@@ -344,6 +345,7 @@ def generate_dg_study_report(
 
     lines.extend([
         "\n### 2.2 物理实现开销对比表 (Area & Standard Cell Count Breakdown)\n",
+        "![FIR 滤波器数据门控物理实现开销对比](./images/data_gating/dg_area_overhead.svg)\n",
         "数据门控仅在 FIR 输入广播端口插入隔离单元，下表展示了各规模下的物理开销绝对值与占比：\n",
         "| 滤波器抽头规模 | 原始标准单元数 | 门控后标准单元数 | 单元数增量 | 原始面积 (um²) | 门控后面积 (um²) | 面积变化率 (Area Delta %) | 关键路径延迟 (Orig → Opt) |",
         "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"
@@ -374,6 +376,7 @@ def generate_dg_study_report(
 
     lines.extend([
         "\n### 2.3 组合逻辑功耗 (Combinational Power) 专项削减对比\n",
+        "![FIR 滤波器数据门控全并行乘法阵列组合功耗专项削减对比](./images/data_gating/dg_comb_power_reduction.svg)\n",
         "数据门控直接作用于全并行乘法器阵列，下表反映典型工况下乘法阵列动态功耗的拦截效果：\n",
         "| 抽头规模 | 有效概率 | 数据活动率 | 原始组合功耗 (uW) | 优化组合功耗 (uW) | 组合功耗变化率 | 原始总功耗 (uW) | 优化总功耗 (uW) | 最终效益判定 |",
         "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"
@@ -410,6 +413,7 @@ def generate_dg_study_report(
         "- **转置型架构的时序优势**: 转置型 FIR 滤波器的关键路径由单个乘法器加上级联寄存器构成（Multiplier -> Pipeline Register），乘法器延迟并不随抽头数 $N$ 级联累加；",
         "- **门控延时极小且完全合规**: 在输入端插入单级与门仅带来约 **0.05ns ~ 0.20ns** 的门级传播延迟，在 100MHz (10ns) 时钟周期下，所有规模下的 Setup Worst Slack 均保持在 **+3.0 ns 以上**，没有任何时序违例产生（TNS = 0.00 ns）。",
         "\n### 3.4 抽头阶数优化收益非单调性机理（12-Tap > 16-Tap > 4-Tap > 8-Tap 的物理本质）",
+        "![FIR 滤波器数据门控微观功耗增减量分解揭示 12>16>4>8 物理机制](./images/data_gating/dg_tap_ranking_breakdown.svg)\n",
         "在控制信号有效率与数据活动率一致的前提下，全流程后仿多维签核数据揭示了一个极为显著且稳定的实际排序：",
         "$$\\mathbf{12\\text{-Tap} > 16\\text{-Tap} > 4\\text{-Tap} > 8\\text{-Tap}}$$",
         "- **宏观层级（高阶组优于低阶组）**: 转置型 FIR 的广播式输入使得门控开销恒定为 8-bit 与门（$O(1)$ 硬件代价），而受控乘法器规模与抽头数 $N$ 成严格正比。12/16-Tap 的受控翻转电容基数远高于 4/8-Tap，撬动了约 **-28% ~ -30%** 的整机净节能，大幅超越低阶组（~23%）；",
