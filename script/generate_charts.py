@@ -253,9 +253,12 @@ def gen_cg_area_breakdown():
 
         bx4 = cx + bw + 1.5 * gap
         bh4 = int(ch * abs(net_d) / (y_max - y_min))
-        col4 = "#059669" if net_d < 0 else ("#64748b" if net_d == 0 else "#dc2626")
+        col4 = "#1e293b"
         by4 = zero_y if net_d <= 0 else zero_y - bh4
-        out.append(f'<rect x="{bx4}" y="{by4}" width="{bw}" height="{bh4}" rx="2" fill="{col4}" stroke="#1e293b" stroke-width="1"/>')
+        if bh4 == 0:
+            out.append(f'<line x1="{bx4}" y1="{zero_y}" x2="{bx4+bw}" y2="{zero_y}" stroke="{col4}" stroke-width="3"/>')
+        else:
+            out.append(f'<rect x="{bx4}" y="{by4}" width="{bw}" height="{bh4}" rx="2" fill="{col4}" stroke="#0f172a" stroke-width="1"/>')
         lbl_y4 = zero_y + bh4 + 14 if net_d <= 0 else zero_y - bh4 - 6
         out.append(f'<text x="{bx4+bw/2}" y="{lbl_y4}" text-anchor="middle" class="data-label" fill="{col4}">{net_d:+.0f}</text>')
 
@@ -402,6 +405,98 @@ def gen_oi_comb_power_reduction():
 
     out.append(svg_footer())
     write_svg_and_validate(OI_DIR / "oi_comb_power_reduction.svg", "".join(out))
+
+
+def gen_oi_activity_impact():
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append('<text x="32" y="38" class="title">Sky130 ALU 操作数隔离：不同数据总线翻转活跃度 (10% vs 30% vs 60%) 对总功耗变化率的影响</text>')
+    out.append('<text x="32" y="58" class="subtitle">对比分析：(左) 稀疏计算工况 (Valid=20%) 下总线翻转率彻底扭转收支平衡 vs (右) 突发休眠工况 (Valid=5%) 下高翻转率放大超额节能</text>')
+
+    panels = [
+        {
+            "title": "工况 A: 稀疏使能计算 (Valid Duty = 20% | 收支平衡临界翻转区)",
+            "subtitle": "低活跃度(10%)导致开销反噬 (+5%)，高活跃度(60%)逆转为深度节能 (-25%)",
+            "x0": 70, "cw": 345, "y_min": -30, "y_max": 10, "step": 10,
+            "data": [
+                ("8-bit", [+0.87, -8.40, -19.17]),
+                ("16-bit", [+4.80, -8.84, -20.50]),
+                ("32-bit", [+5.67, -9.03, -21.85]),
+                ("64-bit", [+2.92, -12.89, -24.71]),
+            ]
+        },
+        {
+            "title": "工况 B: 突发休眠模式 (Valid Duty = 5% | 深度节电区)",
+            "subtitle": "95% 周期阻断无效翻转，活跃度越高，截断的无用功耗越惊人",
+            "x0": 485, "cw": 345, "y_min": -60, "y_max": 0, "step": 15,
+            "data": [
+                ("8-bit", [-28.24, -30.67, -42.47]),
+                ("16-bit", [-32.82, -36.43, -48.79]),
+                ("32-bit", [-35.22, -38.63, -51.19]),
+                ("64-bit", [-38.76, -42.16, -54.44]),
+            ]
+        }
+    ]
+
+    y0, ch = 115, 265
+
+    for p in panels:
+        px0, pcw = p["x0"], p["cw"]
+        py_min, py_max = p["y_min"], p["y_max"]
+        pzero_y = y0 + int(ch * (py_max - 0) / (py_max - py_min))
+
+        out.append(f'<text x="{px0}" y="{y0-28}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="13px" font-weight="700" fill="#1e293b">{p["title"]}</text>')
+        out.append(f'<text x="{px0}" y="{y0-12}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="11px" fill="#64748b">{p["subtitle"]}</text>')
+
+        for val in range(py_min, py_max + 1, p["step"]):
+            y = y0 + int(ch * (py_max - val) / (py_max - py_min))
+            if val == 0:
+                out.append(f'<line x1="{px0}" y1="{y}" x2="{px0+pcw}" y2="{y}" class="zero-line"/>')
+                out.append(f'<text x="{px0+pcw-4}" y="{y-5}" text-anchor="end" class="tick-label" fill="#475569" font-weight="700">0% 临界线</text>')
+            else:
+                out.append(f'<line x1="{px0}" y1="{y}" x2="{px0+pcw}" y2="{y}" class="grid-line"/>')
+            out.append(f'<text x="{px0-8}" y="{y+4}" text-anchor="end" class="tick-label">{val:+d}%</text>')
+
+        gw = pcw / len(p["data"])
+        bw = 20
+        gap = 4
+        bar_colors = ["url(#grad-red)", "url(#grad-blue)", "url(#grad-green)"]
+        text_colors = ["#e11d48", "#0284c7", "#059669"]
+
+        for gi, (gname, vals) in enumerate(p["data"]):
+            cx = px0 + gi * gw + gw / 2
+            gx = cx - (len(vals) * (bw + gap) - gap) / 2
+
+            for vi, v in enumerate(vals):
+                bx = gx + vi * (bw + gap)
+                bh = int(ch * abs(v) / (py_max - py_min))
+                rect_y = pzero_y if v < 0 else pzero_y - bh
+
+                if v < 0 and vi == 0:
+                    fill = "url(#grad-amber)"
+                    tcol = "#d97706"
+                else:
+                    fill = bar_colors[vi]
+                    tcol = text_colors[vi]
+
+                out.append(f'<rect x="{bx}" y="{rect_y}" width="{bw}" height="{bh}" rx="2" fill="{fill}"/>')
+                lbl_y = rect_y - 5 if v >= 0 else rect_y + bh + 12
+                out.append(f'<text x="{bx+bw/2}" y="{lbl_y}" text-anchor="middle" class="data-label" fill="{tcol}">{v:+.1f}%</text>')
+
+            out.append(f'<text x="{cx}" y="{y0+ch+24}" text-anchor="middle" class="axis-label">{gname}</text>')
+
+    lx, ly = 130, h - 18
+    legends = [
+        ("url(#grad-red)", "数据总线翻转率 10% (低噪声总线)"),
+        ("url(#grad-blue)", "数据总线翻转率 30% (中噪声总线)"),
+        ("url(#grad-green)", "数据总线翻转率 60% (高噪声总线)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*230}" y="{ly-10}" width="16" height="12" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*230+24}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(OI_DIR / "oi_activity_impact.svg", "".join(out))
 
 
 # ==============================================================================
@@ -689,6 +784,7 @@ def main():
     gen_cg_area_breakdown()
     gen_oi_total_power_delta()
     gen_oi_comb_power_reduction()
+    gen_oi_activity_impact()
     gen_dg_total_power_delta()
     gen_dg_area_overhead()
     gen_dg_comb_power_reduction()
