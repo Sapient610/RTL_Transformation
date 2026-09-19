@@ -1,59 +1,65 @@
-# 任务目标：构建通用多文件 RTL 变换自动化评估基座（Evaluation Platform）
 # 通用多文件 RTL 变换自动化物理评估基座架构规范 (Evaluation Platform Specification)
 
-你是一位资深的数字 IC 设计与 EDA 自动化工具链专家。我们需要将原本硬编码针对单一模块（`reg_bank`）的单文件评估脚本重构成一套**高鲁棒性、通用化、支持多 Verilog 源文件与任意可 LEC 等价验证之低功耗 RTL 变换**的自动化评估框架。
-本项目已实现一套**高鲁棒性、高解耦、支持任意多源 Verilog 模块与可 LEC 等价验证之低功耗 RTL 变换**的自动化物理评估基座。
+## 1. 流水线设计目标与整体架构
 
-请根据以下架构规范与避坑准则，完成全套评估基座代码与用例目录结构的重构。
+本自动化物理评估基座（Evaluation Platform）旨在为数字集成电路设计及低功耗 RTL 变换研究提供**模块化解耦、高鲁棒性、支持任意多源 Verilog 模块与全流程物理实现的高保真度无人工干预评估闭环**。
+
+传统 RTL 阶段的功耗估算往往依赖理想线网模型或前仿逻辑翻转，无法真实反映物理布局布线后的寄生 RC 分布、时钟树缓冲器功耗、局部拥塞引起的走线绕行以及标准单元驱动选型变化。本评估基座将形式验证、80 阶段工业级物理实现、门级真实后仿与寄生反标签核紧密串联，形成严密的端到端物理验证与评估流水线：
+
+```text
+                  +-----------------------------------------+
+                  |    Original & Optimized Verilog Set     |
+                  +--------------------+--------------------+
+                                       |
+                                       v
+   [Step 1: Formal LEC]  ----------> Yosys SAT 解算器 (功能等价性严格熔断)
+                                       |
+                                       v
+   [Step 2: Full PnR]    ----------> LibreLane 80-Stage 物理实现全流程 (Sky130 HD)
+                                       |
+                          +------------+------------+
+                          |                         |
+                          v                         v
+                   Post-PnR Netlist          Parasitic SPEF
+                    (nl.v 纯逻辑网表)         (nom_tt Corner 典型角点)
+                          |                         |
+                          v                         |
+   [Step 3: Gate-Sim]    Icarus Verilog + VVP       |
+                          | (注入动态 +EN_DUTY)     |
+                          v                         |
+                  Switching Activity (VCD)          |
+                          |                         |
+                          +------------+------------+
+                                       |
+                                       v
+   [Step 4: Signoff]     ----------> OpenSTA 联合签核 (时序/功耗/面积/引脚翻转密度)
+                                       |
+                                       v
+   [Step 5: Report]      ----------> 结构化 JSON + 多维 PPA Trade-off 关系深度分析
+```
 
 ---
 
-## 1. 核心架构与用例目录契约（Case Structure）
-## 1. 核心架构与用例目录契约 (Case Structure)
+## 2. 用例目录规范契约 (Case Structure)
 
-评估基座必须与具体的电路设计和测试激励完全解耦。每个被测案例作为一个独立的用例包管理：
-评估基座与具体的电路设计、激励完全解耦。所有被测案例统一分类存放在 `cases/<category>/<case_name>/` 下：
-
-```text
-benchmark_cases/
-└── <case_name>/
-    ├── meta.json             # 案例元数据配置
-    ├── src_orig/             # 原始 RTL 源文件集合（支持多个 .v / .sv）
-    │   ├── top.v
-    │   └── sub_blocks.v
-    ├── src_opt/              # 优化后的 RTL 源文件集合（多文件）
-    │   ├── top.v
-    │   └── sub_blocks.v
-    └── tb/
-        └── tb_top.v          # 针对该案例的专用测试平台（负责产生真实翻转并转储 VCD）
-cases/
-├── clock_gating/                       # 门控时钟变换案例集
-│   ├── reg_bank_8b/                    # 8 位寄存器（负优化开销反噬样本）
-│   ├── reg_bank_16b/                   # 16 位寄存器（收支平衡临界过渡样本）
-│   ├── reg_bank_32b/                   # 32 位寄存器（经典正收益基准）
-│   └── reg_bank_64b/                   # 64 位寄存器（宽数据通路大幅正收益）
-├── operand_isolation/                  # 操作数隔离变换案例集
-│   └── alu_operand_isolation/          # 32 位多操作数 ALU 隔离案例
-└── contrast_cases/                     # 负优化与工程对照样本集
-    └── multi_file_alu/                 # 16 位 ALU 窄位宽门控时钟反噬案例
-```
-
-### 用例目录结构规范
+评估基座与具体的电路设计、激励完全解耦。所有测试用例统一组织在 `cases/<category>/<case_name>/` 目录下，保持完备的自包含性：
 
 ```text
 cases/<category>/<case_name>/
-├── meta.json             # 案例元数据配置（顶层名、时钟周期、时序约束、源文件列表）
-├── src_orig/             # 原始 RTL 源文件集合（支持多个 .v / .sv）
+├── meta.json             # 案例元数据配置（顶层模块名、时钟周期、时序约束、源文件列表）
+├── src_orig/             # 原始 RTL 源文件集合（支持多个 .v / .sv 文件）
 │   ├── top.v
 │   └── sub_blocks.v
-├── src_opt/              # 优化后的 RTL 源文件集合（多文件）
+├── src_opt/              # 优化后的 RTL 源文件集合（支持多个 .v / .sv 文件）
 │   ├── top.v
 │   └── sub_blocks.v
 └── tb/
-    └── tb_top.v          # 专用测试平台（固定例化为 u_dut，支持 +EN_DUTY 动态传参）
+    └── tb_top.v          # 专用测试平台（固定例化为 u_dut，支持参数动态注入与 VCD 转储）
 ```
 
 ### `meta.json` 规范定义
+
+每个案例必须在根目录下提供 `meta.json`，配置如下电气与实现参数：
 
 ```json
 {
@@ -70,148 +76,205 @@ cases/<category>/<case_name>/
   "sources_orig": ["top.v", "sub_blocks.v"],
   "sources_opt": ["top.v", "sub_blocks.v"]
 }
-
 ```
 
-*注：若 `sources_orig` 或 `sources_opt` 为空数组，脚本需自动遍历收集对应目录下的所有 `*.v` 与 `*.sv` 文件。*
-*注：若 `sources_orig` 或 `sources_opt` 为空数组，评估基座将自动遍历加载目录下所有的 `*.v` 与 `*.sv` 文件。*
+*说明：若 `sources_orig` 或 `sources_opt` 为空数组，评估基座将自动遍历加载对应目录下所有的 `*.v` 与 `*.sv` 文件。*
 
 ---
 
-## 2. 核心执行流程与关键实现细节
-## 2. 核心模块化分层实现 (`src/`)
+## 3. 代码模块化分层架构 (`src/`)
 
-重构后的自动化主脚本 `evaluate_case.py` 必须严格遵循我们在物理实现与签核中踩坑总结的工程准则：
-评估基座的核心逻辑已全面重构至 `src/` 包下：
-
-### Step 1: 通用多文件形式等价性验证（Formal Logic Equivalence Checking）
-
-* **引擎**：Yosys SAT-Solver。
-* **通用多文件读取策略**：
-* 读取 `src_orig` 中所有文件，将顶层重命名为 `<top>_orig`；读取 `src_opt` 中所有文件，将顶层重命名为 `<top>_opt`。
-* 依次执行 `proc` 与 `clk2fflogic`，通过 `equiv_make <top>_orig <top>_opt miter` 构造比对 Miter。
-* 执行 `hierarchy -top miter`、`flatten`、`equiv_simple`、`equiv_induct`，最后以 `equiv_status -assert` 严格断言。
-
-
-* **熔断机制**：形式验证失败时立即终止后续流程，避免浪费物理实现算力。
-
-### Step 2: 物理实现全流程（Physical Implementation via LibreLane）
-
-* **运行环境兼容**：
-* 系统中 LibreLane 通过 AppImage 启动，调用命令格式统一采用：
-`~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py ...` (或执行内部工具链)
-
-
-* **动态 SDC 注入**：
-* 脚本必须依据 `meta.json` 中配置的时钟端口名、周期及延时，在本次运行目录生成标准 `target.sdc`：
-```tcl
-create_clock [get_ports <clock_port>] -name <clock_port> -period <clock_period_ns>
-set_clock_uncertainty <clock_uncertainty_ns> [get_clocks <clock_port>]
-set_clock_transition <clock_transition_ns> [get_clocks <clock_port>]
-set_input_delay -max <input_delay_ns> -clock <clock_port> [all_inputs -no_clocks]
-set_output_delay -max <output_delay_ns> -clock <clock_port> [all_outputs]
-set_load <output_load_pf> [all_outputs]
+为保证平台具备工业级可扩展性，全部执行引擎与辅助模块严格解耦分层：
 
 ```text
 src/
-├── common/                     # 基础设施支持
+├── common/                     # 【基础设施支持】
 │   ├── env.py                  # AppImage DevShell 自托管环境探测与命令执行包装
-│   ├── logger.py               # 集中式时间戳日志与工作空间清理
-│   ├── pdk.py                  # Sky130 PDK 与标准单元库路径自适应定位
+│   ├── logger.py               # 集中式时间戳日志管理与历史归档
+│   ├── pdk.py                  # Sky130 PDK 与高密度标准单元库自适应路径探测
 │   └── case_loader.py          # 用例元数据校验与多文件源码解析
-├── core/                       # 核心流水线 5 大执行阶段
-│   ├── formal.py               # Step 1: Yosys 层次化形式逻辑等价性验证 (LEC)
+├── core/                       # 【核心物理流水线 5 大阶段】
+│   ├── formal.py               # Step 1: Yosys 层次化形式等价性验证 (Formal LEC)
 │   ├── pnr.py                  # Step 2: LibreLane 80-Stage 物理实现与网表/SPEF 提取
-│   ├── sim.py                  # Step 3: Icarus Verilog 门级仿真与动态活动度波形转储
+│   ├── sim.py                  # Step 3: Icarus Verilog 门级仿真与动态翻转波形转储
 │   ├── signoff.py              # Step 4: OpenSTA 静态时序、功耗与引脚翻转密度签核
 │   └── report.py               # Step 5: 全维度 PPA 汇总报表与 Trade-off 关系深度分析
-└── analysis/                   # 高级实验与多维参数扫描
-    └── sweep_clock_gating.py   # 门控时钟 Scale × Activity 二维全物理扫描引擎
+└── analysis/                   # 【高级研究实验与多维参数扫描】
+    ├── sweep_clock_gating.py   # 门控时钟 Scale × Activity 二维全物理扫描引擎
+    ├── sweep_operand_isolation.py # 操作数隔离 Scale × Valid Duty × Activity 三维全物理扫描引擎
+    └── sweep_data_gating.py    # FIR 滤波器数据门控多维参数化扫描引擎
 ```
 
 ---
 
-* 在 LibreLane 的 `config.json` 中显式指定 `"PNR_SDC_FILE"` 与 `"SIGNOFF_SDC_FILE"` 指向该文件，消除 OpenROAD fallback SDC 告警。
-## 3. 关键执行机制与避坑准则
+## 4. 后端 EDA 工具链默认模式、参数配置与约束规范矩阵
 
-### Step 1: 通用多文件形式等价性验证 (Formal LEC)
-* **引擎**：Yosys SAT-Solver。
-* **隔离策略**：读取 `src_orig` 将顶层重命名为 `<top>_orig`，保存后读取 `src_opt` 并重命名为 `<top>_opt`；
-* **时序展平**：依次执行 `proc` 与 `clk2fflogic`，通过 `equiv_make` 生成比对 Miter；
-* **严格熔断**：执行 `equiv_simple`、`equiv_induct`，最后以 `equiv_status -assert` 断言。任何逻辑差异立即中断流水线，保护物理实现算力。
+为确保跨用例、跨变换技术的评估结果具备客观一致性与绝对可比性，平台在各阶段预设了严密的默认工作模式与参数配置：
 
-* **多源文件挂载**：
-* `VERILOG_FILES` 需接受由脚本拼装的完整绝对路径列表。
-### Step 2: 物理实现全流程 (Physical Implementation via LibreLane)
-* **动态 SDC 注入**：根据 `meta.json` 自动生成合规 `target.sdc`，并在配置中显式绑定 `"PNR_SDC_FILE"` 与 `"SIGNOFF_SDC_FILE"`；
-* **80-Stage 完整依赖**：必须设置 `"RUN_KLAYOUT_STREAMOUT": True` 与 `"RUN_MAGIC_STREAMOUT": True`，严禁使用 `--skip Magic.StreamOut`；
-* **网表选型**：必须严格提取 `final/nl/<top>.nl.v`（纯逻辑无电源引脚网表），严禁使用包含 `VPWR/VGND` 的 `pnl.v`；
-* **寄生参数提取**：提取 `final/spef/nom/<top>.nom.spef` 用于下游静态时序与功耗反标。
+### 4.1 PDK 与物理库标准选型
 
-### Step 3: 门级仿真与动态翻转波形转储 (Simulation & VCD)
-* **编译调用**：Icarus Verilog 参数传递 `-g2012 -DFUNCTIONAL -DUNIT_DELAY=#1`，挂载 PDK 原语库与纯逻辑网表；
-* **动态参数化注入**：`tb_top.v` 支持 `$value$plusargs("EN_DUTY=%d", en_duty)` 动态占空比调节；
-* **转储规范**：被测模块固定例化为 `u_dut`，通过 `$dumpvars(0, tb_top.u_dut)` 导出带层级作用域的标准活动波形。
+| 配置项 | 默认配置值 | 规范说明与工程考量 |
+| :--- | :--- | :--- |
+| **目标 PDK 制程** | `sky130A` | SkyWater 130nm 混合信号 CMOS 典型制程 |
+| **标准单元库** | `sky130_fd_sc_hd` | High-Density 高密度标准单元库（7-track 架构，高度 2.72µm，5 层金属） |
+| **签核工艺角 (PVT)** | `nom_tt_025C_1v80` | 典型工艺角（TT 晶体管模型、1.80V 核心供电、25℃ 环境温度） |
+| **时序/功耗 Liberty 库** | `sky130_fd_sc_hd__tt_025C_1v80.lib` | 提供标准单元非线性延迟模型 (NLDM)、引脚电容与纳瓦级动态/静态功耗查找表 |
+| **动态仿真模型库** | `primitives.v` + `sky130_fd_sc_hd.v` | Icarus Verilog 门级仿真所必需的底层晶体管开关原语与标准单元功能行为模型 |
+| **物理黑盒抑制网表** | `sky130_fd_sc_hd__blackbox.v` | 包含 Tapcell、Filler、Decap 等物理单元空壳定义，预载以规避 OpenSTA 黑盒告警 |
 
-* **依赖保护与全流程跑通**：
-* 必须保持 80-Stage 完整流水线。设置 `"RUN_KLAYOUT_STREAMOUT": True` 以及 `"RUN_MAGIC_STREAMOUT": True`。
-* **禁止使用 `--skip Magic.StreamOut` 或 `--skip Magic.WriteLEF**`，防止后续 `WriteLEF: missing required input 'gds'` 和 `CheckDesignAntennaProperties: missing required input 'lef'` 的断链报错。
-* 使用 `"RUN_POST_CTS_RESIZER_TIMING": False` 关闭激进修整（严禁使用已废弃的 `PL_RESIZER_TIMING_OPTIMIZATIONS`）。
-### Step 4: 签核级多维分析 (Signoff Analysis via OpenSTA)
-* **层次作用域反标**：通过 `read_vcd -scope tb_top/u_dut <vcd>` 确保反标引脚数大于 0；
-* **翻转活动度签核导出**：调用 `report_activity_annotation` 统计反标覆盖率（达到 100%），遍历端口与内部引脚提取 `activity` 属性（Transition Density 翻转密度、Static Probability 占空比），导出至 `reports/{tag}_activity.rpt`；
-* **物理面积与时序提取**：结合 LibreLane `metrics.json` 与 OpenSTA 最长路径报表，输出详尽功耗、时序与物理复杂度报告。
-
-### Step 5: 综合 PPA 报告与 Trade-off 关系深度分析 (Report)
-* 全面横向比对 Power、Timing、Area、Energy (PDP) 与 Activity 五大维度；
-* 深入计算“面积惩罚代价比”、“时序敏感度”与“功耗延迟积（PDP）”，输出 JSON 结构化数据与 Markdown 汇总分析。
-
-* **产物提取**：
-* **网表提取**：必须严格提取 `final/nl/<top>.nl.v`（纯逻辑无电源引脚网表）。**切勿提取 `final/pnl/*.pnl.v**`（避免 Icarus Verilog 因缺少 `VPWR`/`VGND` 引脚模型崩溃）。
-* **寄生参数**：提取 `final/spef/nom/<top>.nom.spef`（或自动降级匹配典型角点 SPEF）。
 ---
 
-## 4. 运行与验证指令
+### 4.2 默认 SDC 时序约束与电气环境规范
+
+所有用例统一注入基于 100MHz 标称工况的高保真数字系统时序与驱动负载约束：
+
+| SDC 参数项 | 默认取值 | SDC 命令实现 | 规范说明与设计意图 |
+| :--- | :---: | :--- | :--- |
+| **时钟端口名 (`clock_port`)** | `"clk"` | `create_clock [get_ports clk] ...` | 顶层时钟网络输入主端口 |
+| **时钟周期 (`clock_period_ns`)** | `10.0 ns` | `-period 10.0` | 标称目标主频 100 MHz |
+| **时钟不确定度 (`clock_uncertainty_ns`)** | `0.25 ns` | `set_clock_uncertainty 0.25 [get_clocks clk]` | 时钟抖动 (Jitter) 与偏斜 (Skew) 预留预算（占周期 2.5%） |
+| **时钟转换时间 (`clock_transition_ns`)** | `0.15 ns` | `set_clock_transition 0.15 [get_clocks clk]` | 标称时钟沿 Slew 速率 (150 ps) |
+| **输入建立延迟 (`input_delay_ns`)** | `2.0 ns` | `set_input_delay -max 2.0 -clock clk [all_inputs -no_clocks]` | 外部输入路径延时上限预算（占周期 20%） |
+| **输出下游延迟 (`output_delay_ns`)** | `2.0 ns` | `set_output_delay -max 2.0 -clock clk [all_outputs]` | 外部输出接口下游建立时间预算（占周期 20%） |
+| **输出负载容抗 (`output_load_pf`)** | `0.033442 pF` | `set_load 0.033442 [all_outputs]` | 约 33.44 fF，等效于驱动 4 个标准负载单元 (`sky130_fd_sc_hd__inv_4` 输入电容) |
+| **SDC 绑定机制** | 双向显式绑定 | `"PNR_SDC_FILE"`, `"SIGNOFF_SDC_FILE"` | 显式绑定本次生成的 `target.sdc`，规避 OpenROAD 默认降级回退告警 |
+
+---
+
+### 4.3 形式逻辑等价性验证默认工作模式 (Step 1: Yosys SAT)
+
+* **执行引擎**：Yosys 0.62+ 原生内建 SAT-Solver。
+* **语言前端**：`read_verilog -sv`（强制遵循 SystemVerilog 2012 前端语法规范，支持接口与多维数组）。
+* **状态与时钟展平抽象**：
+  * `proc`：将 RTL 级过程块（`always @`）展平转换为内部 RTLIL 布尔算子与锁存/触发结构；
+  * `clk2fflogic`：将时钟边沿触发触发器（DFF）转为形式验证等效的状态转移方程网络。
+* **Miter 结构与求解**：
+  * 分别读取原始与优化源文件，重命名顶层为 `<top>_orig` 与 `<top>_opt`；
+  * `equiv_make` 将两者同名输入并联、输出异或，生成比对 Miter 双端口网络；
+  * `equiv_simple`：进行结构同构与组合逻辑直接规约；
+  * `equiv_induct`：利用 K-归纳法（Temporal Induction）求解时序循环与状态机等价性。
+* **熔断机制**：`equiv_status -assert` 遇单 bit 不匹配立即退出并抛出异常，强行熔断流水线以保护后端物理算力。
+
+---
+
+### 4.4 物理后端实现默认模式与参数矩阵 (Step 2: LibreLane / OpenLane)
+
+LibreLane 驱动完整 80-Stage 物理设计全流程，各项关键阶段的默认模式与工程策略如下：
+
+| 设计阶段 / 工具 | 核心控制参数 | 默认取值 | 工程策略与物理意义 |
+| :--- | :--- | :---: | :--- |
+| **逻辑综合与映射**<br>(Yosys + ABC) | `SYNTH_STRATEGY`<br>`ABC_AREA`<br>`ABC_SCRIPT` | `"AREA_0"`<br>`True`<br>标准优化流 | 面积优先技术映射。执行 `fx, mfs, strash, balance, drw, amap` 流程，平衡门数与延时 |
+| **版图规划**<br>(OpenROAD Floorplan) | `FP_SIZING`<br>`FP_CORE_UTIL`<br>`FP_ASPECT_RATIO` | `"relative"`<br>`25` (%)<br>`1` (1:1) | 相对尺寸自动推导。设定核心利用率 25%（预留 75% 走线与缓冲器空间，避免拥塞），生成正方形 Die |
+| **IO 引脚摆放**<br>(OpenROAD IO Place) | `FP_IO_MODE`<br>`FP_PIN_ORDER_CFG` | 自动周围分布<br>自适应分配 | 在芯片外围均匀间隔摆放引脚，规避引脚局部高密度交叉重叠导致的布线死锁 |
+| **电源网络构建**<br>(OpenROAD PDN) | `PDN_CFG`<br>`FP_PDN_RAILS` | 标准网格<br>`met4 / met1` | 垂直电源条带走 `met4`，标准单元供电轨走 `met1`，满足 IR-Drop 压降与 EM 电迁移安全裕度 |
+| **全局与详细布局**<br>(RePlAce & OpenDP) | `PL_TARGET_DENSITY_PCT`<br>`PL_BASIC_PLACEMENT` | `35` (%)<br>`False` | 目标布局密度限制在 35%，防止局部热点；OpenDP 强制进行 `unithd` site 对齐与合法化 (Legalization) |
+| **时钟树综合**<br>(TritonCTS) | `CTS_CLK_BUFFERS`<br>`CTS_MAX_SLEW` | `clkbuf / clkinv`<br>`< 0.75 ns` | 选用 Sky130 专用平衡时钟缓冲器/反相器树，控制全芯片各叶子端最大转换时间与偏斜 |
+| **后时钟时序重构**<br>(OpenROAD Resizer) | `RUN_POST_CTS_RESIZER_TIMING` | **`False` (强制关闭)** | **关键控制点**：CTS 后关闭逻辑重构与单元合并，严防工具拆解或破坏由 RTL 精心构建的数据门控与操作数隔离拓扑；保持时间修复 (`repair_design -hold`) 正常开启 |
+| **全局与详细布线**<br>(FastRoute & TritonRoute) | `ROUTING_CORES`<br>`MIN_ROUTING_LAYER`<br>`MAX_ROUTING_LAYER` | `auto`<br>`met1`<br>`met5` | 利用 5 层全金属工艺自动收敛布线，多轮迭代消除 DRC 违例（短路/开路/最小线宽/最小间距） |
+| **版图输出与完整性**<br>(KLayout & Magic) | `RUN_KLAYOUT_STREAMOUT`<br>`RUN_MAGIC_STREAMOUT` | **`True` (必须开启)**<br>**`True` (必须开启)** | **关键依赖保护**：生成 GDSII 与 LEF 产物，维持下游天线规则检查与版图抽取输入链完备，**严禁跳过** |
+| **物理验证提速开关**<br>(DRC / LVS) | `RUN_KLAYOUT_DRC`<br>`RUN_MAGIC_DRC`<br>`RUN_LVS` | **`False`**<br>**`False`**<br>**`False`** | 在功能评估阶段默认旁路耗时的独立物理验证，将单次全流程耗时压缩 75% 以上 |
+| **输出交付物规范** | `Netlist`<br>`SPEF`<br>`Metrics` | `final/nl/<top>.nl.v`<br>`final/spef/nom/*.spef`<br>`final/metrics.json` | 提取纯逻辑 No-Power 网表（严禁使用带 `VPWR/VGND` 的 `pnl.v` 供仿真使用）；提取典型角点 SPEF 与结构化物理指标 |
+
+---
+
+### 4.5 门级动态仿真默认模式与传参规范 (Step 3: Icarus Verilog)
+
+* **编译参数**：`iverilog -g2012 -DFUNCTIONAL primitives.v sky130_fd_sc_hd.v <nl.v> tb_top.v -o <vvp_path>`
+* **严禁传参**：切勿人为传递 `-DUNIT_DELAY=0` 或 `-DUNIT_DELAY=""`（会导致 Sky130 库内部宏语法解析错误引发 `syntax error`）。
+* **运行与动态激励传参**：`vvp <vvp_path> +VCD_FILE=<vcd_path> [+EN_DUTY=<int>] [+DATA_ACT=<int>]`
+* **波形转储契约**：用例的 `tb_top.v` 必须将 DUT 严格实例化为 `u_dut`，并在代码中执行：
+  ```verilog
+  $dumpfile(vcd_file);
+  $dumpvars(0, tb_top.u_dut);
+  ```
+  严格限定转储层级，杜绝测试平台辅助信号与时钟发生器污染被测核心的翻转活动度。
+
+---
+
+### 4.6 签核级多维分析默认模式与命令规范 (Step 4: OpenSTA Signoff)
+
+* **执行引擎**：原生 OpenSTA 2.7.0+。
+* **层次作用域路径**：使用标准正斜杠层级 `read_vcd -scope tb_top/u_dut <vcd_file>`，确保反标引脚计数必须大于 0。
+* **黑盒定义注入**：在 `read_verilog` 网表前，预先载入 PDK 官方提供的 `sky130_fd_sc_hd__blackbox.v`，消除物理单元 `Creating black box` 警告。
+* **单角点直接签核**：通过 `read_liberty <SCL__tt_025C_1v80.lib>` 载入基准库（无需带未声明的 `-corner` 标签）。
+* **高精度功耗拆解**：调用原生 `report_power` 输出 `Sequential`、`Combinational`、`Clock`、`Total` 四大类别的 `Internal`、`Switching`、`Leakage` 功耗。
+* **最坏路径时序分析**：
+  * `report_checks -path_delay max -format full_clock_expanded -digits 3` 输出建立时间最长路径、时钟偏斜、转换时间与关键数据到达时间；
+  * `report_worst_slack -max` / `report_worst_slack -min` / `report_tns` 全面签核 Setup WS、Hold WS 与总负松弛度 TNS。
+* **引脚/信号翻转密度内省**：
+  * 采用 Tcl 脚本遍历 `[get_ports *]` 与 `[get_pins *]`，读取 `activity` 属性（翻转密度 `Transition Density (trans/s)`、静态高电平概率 `Static Prob`），生成完整的全芯片翻转分布详报 `reports/{tag}_activity.rpt`。
+
+---
+
+## 5. 关键工程机制与避坑准则
+
+### 5.1 80-Stage 完整依赖链保护机制
+* **问题现象**：若在运行 LibreLane 时试图通过 `--skip Magic.StreamOut` 或 `--skip Magic.WriteLEF` 节约时间，后续步骤会因找不到必需的物理 GDSII 版图而相继抛出：
+  `WriteLEF: missing required input 'gds'` 以及 `CheckDesignAntennaProperties: missing required input 'lef'`。
+* **工程准则**：必须完整保留全部 80 阶段流水线，在配置中强制声明 `"RUN_KLAYOUT_STREAMOUT": True` 与 `"RUN_MAGIC_STREAMOUT": True`。
+
+### 5.2 纯逻辑网表 (`nl.v`) vs 物理电源网表 (`pnl.v`)
+* **问题现象**：LibreLane 在 `final/pnl/` 目录下生成的网表包含电源引脚绑定（如 `.VPWR(VPWR), .VGND(VGND)`）。若将此网表传给 Icarus Verilog 进行门级仿真，仿真器将因缺少电源网络模型或供电未赋初值而崩溃或产生大面积 `x` 不定态。
+* **工程准则**：下游门级仿真与 OpenSTA 签核必须严格使用 `final/nl/<top>.nl.v`（纯逻辑 No-Power 网表），将仿真与物理电源引脚解耦。
+
+### 5.3 Sky130 延迟模型兼容性与 `UNIT_DELAY` 陷阱
+* **问题现象**：在某些老旧教程中常建议使用 `-DUNIT_DELAY=0`。但在 SkyWater 130nm 库实现中，`sky130_fd_sc_hd.v` 内部大量使用了形如 `#UNIT_DELAY` 的宏延迟声明。传递 `0` 或空字符串会导致预编译器生成非法语法（如 `#0` 在特定原语块中报错或语法树解析异常）。
+* **工程准则**：编译门级网表时仅传递 `-g2012 -DFUNCTIONAL`，由模型库自适应处理。
+
+### 5.4 物理优化中保持 RTL 门控微架构的必要性
+* **问题现象**：若在 CTS 之后开启激进的时序重重构（Resizer），综合器可能会将设计者精心设计的输入隔离与门或数据门控 MUX 视为冗余逻辑，或在平衡路径时将其打碎溶解入下游加法树/进位链中（如 8-Tap FIR 异常增生现象），从而彻底破坏 RTL 变换的低功耗初衷。
+* **工程准则**：显式配置 `"RUN_POST_CTS_RESIZER_TIMING": False`，严格维持 RTL 级门控结构。
+
+---
+
+## 6. 工作空间目录结构契约 (Workspace Layout)
+
+运行生成的产物完全解耦分层存放在 `eval_workspace/<category>/<case_name>/` 下：
+
+```text
+eval_workspace/<category>/<case_name>/
+├── sim/                          # 专用仿真目录 (.vvp 二进制与 .vcd 波形)
+│   ├── sim_orig.vvp              # 原始网表仿真二进制
+│   ├── orig_activity.vcd         # 原始设计活动波形
+│   ├── sim_opt.vvp               # 优化网表仿真二进制
+│   └── opt_activity.vcd          # 优化设计活动波形
+├── reports/                      # 专用报告与签核目录
+│   ├── orig_power.rpt            # 原始设计功耗详报 (含 Group 拆解)
+│   ├── opt_power.rpt             # 优化设计功耗详报
+│   ├── orig_timing.rpt           # 原始设计时序关键路径详报
+│   ├── opt_timing.rpt            # 优化设计时序关键路径详报
+│   ├── orig_area.rpt             # 原始设计物理面积与单元统计详报
+│   ├── opt_area.rpt              # 优化设计物理面积与单元统计详报
+│   ├── orig_activity.rpt         # 原始设计引脚级翻转密度详报
+│   ├── opt_activity.rpt          # 优化设计引脚级翻转密度详报
+│   ├── ppa_summary.json          # 全维度 PPA 结构化指标数据
+│   └── ppa_summary.md            # 综合汇总报告（含功耗/时序/面积 Trade-off 关系深度分析）
+├── formal/                       # 形式验证工程目录 (lec.ys)
+├── orig/                         # 原始设计 LibreLane PnR 物理工程
+├── opt/                          # 优化设计 LibreLane PnR 物理工程
+└── logs/<timestamp>/             # 集中会话历史归档日志
+    └── overall_pipeline.log
+```
+
+---
+
+## 7. 运行与验证指令
+
+平台支持直接在宿主环境或 AppImage 容器内调用：
 
 ```bash
-# 1. 评估单案例
-~/librelane/librelane-devshell-x86_64.AppImage python evaluate_case.py --case-dir cases/clock_gating/reg_bank_32b
+# 1. 评估单案例全流程 (以 32-bit 寄存器时钟门控为例)
+./script/evaluate_case.py --case-dir cases/clock_gating/reg_bank_32b
 
-### Step 3: 案例专用测试平台仿真与活跃度转储（Simulation & VCD Generation）
+# 2. 评估操作数隔离案例
+./script/evaluate_case.py --case-dir cases/operand_isolation/alu_operand_isolation
 
-* **编译调用**：
-* 使用 Icarus Verilog，命令参数中**只传 `-g2012 -DFUNCTIONAL**`，包含 PDK 原语库 `primitives.v`、功能模型 `sky130_fd_sc_hd.v`、综合门级网表 `nl.v` 以及该用例专属的 `tb/tb_top.v`。
-* **严禁传参**：切勿人为传递 `-DUNIT_DELAY=0` 或 `-DUNIT_DELAY=""`（会导致 Sky130 库内部宏语法解析错误引发 `syntax error`）。
+# 3. 运行门控时钟二维全物理参数化扫描与收支平衡研究 (Scale × Activity)
+./script/sweep_clock_gating.py
 
+# 4. 运行操作数隔离三维全物理参数化扫描与损益临界模型研究 (Scale × Valid Duty × Data Activity)
+./script/sweep_operand_isolation.py
 
-* **波形转储契约**：用例的 `tb_top.v` 负责实例化 DUT（固定例化名为 `u_dut`），并在仿真中执行：
-```verilog
-$dumpfile("<tag>_activity.vcd");
-$dumpvars(0, tb_top.u_dut);
-
-# 2. 运行二维门控时钟全物理扫描与临界模型分析 (Scale × Activity)
-~/librelane/librelane-devshell-x86_64.AppImage python sweep_clock_gating.py
+# 5. 运行 FIR 滤波器数据门控多维全物理参数化扫描与收支平衡研究 (4/8/12/16-Tap)
+./script/sweep_data_gating.py
 ```
-
-
-
-### Step 4: 签核级功耗分析（Signoff Power Evaluation via OpenSTA）
-
-* **层次作用域路径**：使用标准正斜杠层级 `read_vcd -scope tb_top/u_dut <vcd_file>`，确保 OpenSTA 成功反标（日志中引脚活动计数必须大于 0）。
-* **黑盒定义注入**：在 `read_verilog` 网表前，预先载入 PDK 官方提供的 `sky130_fd_sc_hd__blackbox.v`，消除物理单元 `Creating black box` 警告。
-* **单角点直接签核**：通过 `read_liberty <SCL__tt_025C_1v80.lib>` 载入基准库（无需带未声明的 `-corner` 标签）。直接调用原生 `report_power` 输出四维指标。
-
----
-
-## 3. 交付要求
-
-1. **`evaluate_case.py` 主脚本**：
-* 支持通过命令行参数传入用例目录：`python evaluate_case.py --case-dir ./benchmark_cases/<case_name>`。
-* 自动探测 PDK 环境（优先支持 `~/.ciel` 根目录层级版本自适应）。
-* 包含独立的时间戳集中日志归档。
-* 控制台和汇总日志末尾输出格式化的四维功耗对比报告表格（`Internal`、`Switching`、`Leakage`、`Total`）。
-
-
-2. **测试平台（Testbench）模板样例**：提供一个通用的 `tb_top.v` 书写模板，标明端口驱动、波形转储作用域与时序边界规范。
-3. **代码健壮性**：针对文件缺失、LEC 失败、子进程非零返回等情况提供清晰的 Exception Handling 与精准日志引导。
-

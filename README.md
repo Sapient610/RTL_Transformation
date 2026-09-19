@@ -165,7 +165,114 @@ cases/<category>/<case_name>/
 
 ---
 
-## 6. 工作空间目录结构契约 (Workspace Layout)
+## 6. 后端 EDA 工具链默认工作模式与参数配置规范
+
+为了保证评估基座在无人工干预自动化执行过程中的**高度鲁棒性、可复现性与数据可比性**，物理评估基座在底层对 EDA 工具链各阶段的工作模式、时序约束与优化参数进行了标准化约束：
+
+### 6.1 PDK 与标准单元库默认配置
+
+| 配置项 | 默认配置值 | 规范说明与工程考量 |
+| :--- | :--- | :--- |
+| **PDK 制程节点** | `sky130A` | SkyWater 130nm 混合信号 CMOS 典型制程 |
+| **标准单元库** | `sky130_fd_sc_hd` | High-Density 高密度标准单元库（7-track 架构，高度 2.72µm，5 层金属制程） |
+| **PVT 签核工艺角** | `nom_tt_025C_1v80` | 典型工艺角（Typical-Typical 晶体管模型、1.80V 核心供电电压、25℃ 环境温度） |
+| **时序与功耗库文件** | `sky130_fd_sc_hd__tt_025C_1v80.lib` | 包含标准单元输入电容、非线性延迟模型 (NLDM) 与内部/漏电功耗查找表 |
+| **行为原语库文件** | `primitives.v` + `sky130_fd_sc_hd.v` | Icarus Verilog 门级动态仿真所必需的晶体管原语与单元功能描述模型 |
+| **物理黑盒抑制定义** | `sky130_fd_sc_hd__blackbox.v` | OpenSTA 读入网表前预载，消除 Tapcell、Fill、Decap 等物理单元的 Blackbox 警告 |
+
+---
+
+### 6.2 默认 SDC 时序约束与电气环境规范
+
+若用例的 `meta.json` 中未显式指定，评估基座默认注入基于 100MHz 主频的高保真数字系统时序边界约束：
+
+| SDC 参数项 | 默认取值 | SDC 命令实现 | 规范说明与设计意图 |
+| :--- | :---: | :--- | :--- |
+| **时钟端口名 (`clock_port`)** | `"clk"` | `create_clock [get_ports clk] ...` | 顶层系统时钟输入端口 |
+| **时钟周期 (`clock_period_ns`)** | `10.0 ns` | `-period 10.0` | 标称目标主频 100 MHz |
+| **时钟不确定度 (`clock_uncertainty_ns`)** | `0.25 ns` | `set_clock_uncertainty 0.25 [get_clocks clk]` | 时钟抖动 (Jitter) 与偏斜 (Skew) 预留预算（占周期 2.5%） |
+| **时钟转换时间 (`clock_transition_ns`)** | `0.15 ns` | `set_clock_transition 0.15 [get_clocks clk]` | 标称时钟沿 Slew 速率 (150 ps) |
+| **输入建立延迟 (`input_delay_ns`)** | `2.0 ns` | `set_input_delay -max 2.0 -clock clk [all_inputs -no_clocks]` | 外部输入路径延时上限（占周期 20%） |
+| **输出下游延迟 (`output_delay_ns`)** | `2.0 ns` | `set_output_delay -max 2.0 -clock clk [all_outputs]` | 外部输出接口下游建立时间预算（占周期 20%） |
+| **输出负载容抗 (`output_load_pf`)** | `0.033442 pF` | `set_load 0.033442 [all_outputs]` | 约 33.44 fF，等效于驱动 4 个标准负载单元 (`sky130_fd_sc_hd__inv_4` 输入电容) |
+| **SDC 绑定机制** | 双向显式绑定 | `"PNR_SDC_FILE"`, `"SIGNOFF_SDC_FILE"` | 同时绑定自动生成的 `target.sdc`，杜绝 OpenROAD 回退 fallback 告警 |
+
+---
+
+### 6.3 形式逻辑等价性验证默认工作模式 (Step 1: Yosys SAT)
+
+* **工具环境**：Yosys 0.62+ 原生 SAT-Solver。
+* **输入标准**：`read_verilog -sv`（强制遵循 SystemVerilog 2012 前端语法规范）。
+* **时序与状态抽象**：
+  * `proc`：将过程块（`always @`）展平转换为内部 RTL 算子与锁存/触发结构；
+  * `clk2fflogic`：将时钟边沿触发触发器（DFF）转为形式验证等价的状态转移布尔网络。
+* **Miter 比对结构**：
+  * 分别以 `<top>_orig` 与 `<top>_opt` 构建顶层并重命名，通过 `equiv_make` 将两者同名输入输出交织绑定生成 Miter 双端口网络。
+* **求解策略与熔断**：
+  * `equiv_simple`（基于结构同构与组合逻辑直接规约）+ `equiv_induct`（K-归纳法求解时序状态环）；
+  * `equiv_status -assert`：任何单 bit 逻辑不一致即触发异常熔断，退出码非零，立即终止物理后端流程，避免算力浪费。
+
+---
+
+### 6.4 物理后端实现默认模式与参数矩阵 (Step 2: LibreLane / OpenLane)
+
+LibreLane 驱动完整 80-Stage 物理设计全流程，各项关键阶段的默认模式与工程策略如下：
+
+| 设计阶段 / 阶段工具 | 核心控制参数 | 默认取值 | 工程策略与物理意义 |
+| :--- | :--- | :---: | :--- |
+| **逻辑综合与映射**<br>(Yosys + ABC) | `SYNTH_STRATEGY`<br>`ABC_AREA`<br>`ABC_SCRIPT` | `"AREA_0"`<br>`True`<br>标准优化流 | 面积优先技术映射。执行 `fx, mfs, strash, balance, drw, amap` 流程，平衡门数与延时 |
+| **版图规划**<br>(OpenROAD Floorplan) | `FP_SIZING`<br>`FP_CORE_UTIL`<br>`FP_ASPECT_RATIO` | `"relative"`<br>`25` (%)<br>`1` (1:1) | 相对尺寸自动推导。设定核心利用率 25%（预留 75% 走线与缓冲器空间，避免拥塞），生成正方形 Die |
+| **IO 引脚摆放**<br>(OpenROAD IO Place) | `FP_IO_MODE`<br>`FP_PIN_ORDER_CFG` | 自动周围分布<br>自适应分配 | 在芯片外围均匀间隔摆放引脚，规避引脚局部高密度交叉重叠导致的布线死锁 |
+| **电源网络构建**<br>(OpenROAD PDN) | `PDN_CFG`<br>`FP_PDN_RAILS` | 标准网格<br>`met4 / met1` | 垂直电源条带走 `met4`，标准单元供电轨走 `met1`，满足 IR-Drop 压降与 EM 电迁移安全裕度 |
+| **全局与详细布局**<br>(RePlAce & OpenDP) | `PL_TARGET_DENSITY_PCT`<br>`PL_BASIC_PLACEMENT` | `35` (%)<br>`False` | 目标布局密度限制在 35%，防止局部热点；OpenDP 强制进行 `unithd` site 对齐与合法化 (Legalization) |
+| **时钟树综合**<br>(TritonCTS) | `CTS_CLK_BUFFERS`<br>`CTS_MAX_SLEW` | `clkbuf / clkinv`<br>`< 0.75 ns` | 选用 Sky130 专用平衡时钟缓冲器/反相器树，控制全芯片各叶子端最大转换时间与偏斜 |
+| **后时钟时序重构**<br>(OpenROAD Resizer) | `RUN_POST_CTS_RESIZER_TIMING` | **`False` (强制关闭)** | **关键控制点**：CTS 后关闭逻辑重构与单元合并，严防工具拆解或破坏由 RTL 精心构建的数据门控与操作数隔离拓扑；保持时间修复 (`repair_design -hold`) 正常开启 |
+| **全局与详细布线**<br>(FastRoute & TritonRoute) | `ROUTING_CORES`<br>`MIN_ROUTING_LAYER`<br>`MAX_ROUTING_LAYER` | `auto`<br>`met1`<br>`met5` | 利用 5 层全金属工艺自动收敛布线，多轮迭代消除 DRC 违例（短路/开路/最小线宽/最小间距） |
+| **版图输出与完整性**<br>(KLayout & Magic) | `RUN_KLAYOUT_STREAMOUT`<br>`RUN_MAGIC_STREAMOUT` | **`True` (必须开启)**<br>**`True` (必须开启)** | **关键依赖保护**：生成 GDSII 与 LEF 产物，维持下游天线规则检查与版图抽取输入链完备，**严禁跳过** |
+| **物理验证提速开关**<br>(DRC / LVS) | `RUN_KLAYOUT_DRC`<br>`RUN_MAGIC_DRC`<br>`RUN_LVS` | **`False`**<br>**`False`**<br>**`False`** | 在功能评估阶段默认旁路耗时的独立物理验证，将单次全流程耗时压缩 75% 以上 |
+| **输出交付物规范** | `Netlist`<br>`SPEF`<br>`Metrics` | `final/nl/<top>.nl.v`<br>`final/spef/nom/*.spef`<br>`final/metrics.json` | 提取纯逻辑 No-Power 网表（严禁使用带 `VPWR/VGND` 的 `pnl.v` 供仿真使用）；提取典型角点 SPEF 与结构化物理指标 |
+
+---
+
+### 6.5 门级动态仿真默认模式与传参规范 (Step 3: Icarus Verilog)
+
+* **编译标准与宏定义**：
+  * 命令：`iverilog -g2012 -DFUNCTIONAL -o <vvp_path> primitives.v sky130_fd_sc_hd.v <netlist.nl.v> tb_top.v`
+  * 启用 SystemVerilog 2012 语言解析；
+  * **传参禁忌**：切勿人为传入 `-DUNIT_DELAY=0` 或 `-DUNIT_DELAY=""`，否则与 Sky130 行为模型内嵌的延迟说明语法冲突报语法错误。
+* **执行与动态注入**：
+  * 执行命令：`vvp <vvp_path> +VCD_FILE=<vcd_path> [+EN_DUTY=<int>] [+DATA_ACT=<int>]`
+  * 占空比与活跃度参数无需重新综合与布局布线，在仿真运行时通过 `$value$plusargs` 动态注入，保证工况扫描高效执行。
+* **波形转储契约**：
+  * 被测设计顶层在 `tb_top.v` 中必须严格且唯一实例化为 `u_dut`；
+  * 使用 `$dumpvars(0, tb_top.u_dut)` 严格隔离转储作用域，杜绝 Testbench 外围激励信号与计数器污染 DUT 内部活动度。
+
+---
+
+### 6.6 签核级多维分析默认模式与命令规范 (Step 4: OpenSTA Signoff)
+
+* **执行引擎与依赖环境**：原生 OpenSTA 2.7.0+，纯 Tcl 脚本化驱动。
+* **环境加载与模型绑定**：
+  1. `read_liberty sky130_fd_sc_hd__tt_025C_1v80.lib` 载入基准时序功耗库（无需传递未定义的 `-corner` 参数）；
+  2. `read_verilog sky130_fd_sc_hd__blackbox.v` 预先抑制物理单元警告；
+  3. `read_verilog <nl.v>` 加载 No-Power 纯逻辑物理网表；
+  4. `link_design <top>` 完成顶层逻辑绑定；
+  5. `read_spef <spef>` 反标典型角点 RC 寄生网络。
+* **时序与电气边界定义**：
+  * `create_clock -name <clock_port> -period <clock_period> [get_ports <clock_port>]`
+* **基于真实动态波形的反标签核 (Vector-Based Power Signoff)**：
+  * `read_vcd -scope tb_top/u_dut <vcd>`：采用标准正斜杠层次反标真实的动态翻转波形；
+  * 校验反标引脚计数必须大于 0，并通过 `report_activity_annotation -report_annotated` 验证覆盖率达 100%；
+  * `report_power`：输出按 `Sequential`、`Combinational`、`Clock`、`Total` 与 `Internal`、`Switching`、`Leakage` 矩阵分解的纳瓦级精细功耗。
+* **最坏时序路径签核**：
+  * `report_checks -path_delay max -format full_clock_expanded -digits 3` 输出建立时间最长路径、时钟偏斜、转换时间与关键数据到达时间；
+  * `report_worst_slack -max` / `report_worst_slack -min` / `report_tns` 全面签核 Setup WS、Hold WS 与总负松弛度 TNS。
+* **信号与引脚翻转密度内省**：
+  * 运行内置的 Tcl 内省循环，遍历全芯片所有端口 `get_ports *` 与实例引脚 `get_pins *`，抓取其底层 `activity` 属性（包含翻转密度 `Transition Density (trans/s)`、高电平概率 `Static Prob` 与数据源类型 `Source`），格式化导出为 `reports/{tag}_activity.rpt`。
+
+---
+
+## 7. 工作空间目录结构契约 (Workspace Layout)
 
 运行生成的产物完全解耦分层存放在 `eval_workspace/<category>/<case_name>/` 下：
 
@@ -196,7 +303,7 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 7. 快速上手
+## 8. 快速上手
 
 推荐直接运行 `script/` 目录下的 CLI 入口脚本（内建自适应环境探测机制，若在宿主系统直接运行，脚本将自动检测并自托管重定向至 AppImage devshell 执行）：
 
@@ -224,7 +331,7 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 8. 代表性低功耗变换物理签核对比
+## 9. 代表性低功耗变换物理签核对比
 
 | 测试案例 | 变换技术 | Total 功耗变化 | 面积变化 (Stdcell) | 时序裕量变化 (Setup WS) | 核心物理结论与 Trade-off 关系 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -235,7 +342,7 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 9. 门控时钟影响因素研究成果 (Breakeven Threshold)
+## 10. 门控时钟影响因素研究成果 (Breakeven Threshold)
 
 通过 `script/sweep_clock_gating.py` 对 4 种位宽规模（8b/16b/32b/64b）与 4 种使能活跃度（5%/20%/50%/80%）共 16 组矩阵进行了全物理后仿扫描（完整技术研报详见 [`doc/clock_gating_study_report.md`](doc/clock_gating_study_report.md)）：
 
@@ -258,7 +365,7 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 10. 操作数隔离多维度影响因素研究成果 (Scale × Duty × Activity)
+## 11. 操作数隔离多维度影响因素研究成果 (Scale × Duty × Activity)
 
 通过 `script/sweep_operand_isolation.py` 对 4 种位宽（8b/16b/32b/64b）× 4 种有效概率（5%/20%/50%/80%）× 3 种总线活跃度（10%/30%/60%）共 **48 组三维全物理后仿矩阵** 进行了签核评估（完整技术研报详见 [`doc/operand_isolation_study_report.md`](doc/operand_isolation_study_report.md)）：
 
@@ -280,7 +387,7 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 11. FIR 滤波器数据门控微观物理机理与广播式架构杠杆效应研究成果
+## 12. FIR 滤波器数据门控微观物理机理与广播式架构杠杆效应研究成果
 
 针对真实 DSP 与音频处理中功耗密集的有限冲激响应滤波器，通过 `script/sweep_data_gating.py` 对 4 种转置型 FIR 抽头规模（4/8/12/16-Tap）× 4 种采样有效率（5%/20%/50%/80%）× 3 种总线翻转率（10%/30%/60%）共 **48 组三维全物理后仿矩阵** 进行了系统性签核评估（完整技术研报详见 [`doc/data_gating_study_report.md`](doc/data_gating_study_report.md)）：
 
@@ -303,7 +410,7 @@ eval_workspace/<category>/<case_name>/
 
 ---
 
-## 12. 详细技术文档与报告链接
+## 13. 详细技术文档与报告链接
 
 - [通用多文件 RTL 变换自动化评估基座架构规范](doc/Evaluation_Platform.md)
 - [门控时钟多维度敏感度与物理损益平衡定量分析报告](doc/clock_gating_study_report.md)
