@@ -102,7 +102,8 @@ src/
 └── analysis/                   # 【高级研究实验与多维参数扫描】
     ├── sweep_clock_gating.py   # 门控时钟 Scale × Activity 二维全物理扫描引擎
     ├── sweep_operand_isolation.py # 操作数隔离 Scale × Valid Duty × Activity 三维全物理扫描引擎
-    └── sweep_data_gating.py    # FIR 滤波器数据门控多维参数化扫描引擎
+    ├── sweep_data_gating.py    # FIR 滤波器数据门控多维参数化扫描引擎
+    └── sweep_gray_counter.py   # 格雷码计数器 Scale × Activity 全物理扫描引擎
 ```
 
 ---
@@ -277,4 +278,7 @@ eval_workspace/<category>/<case_name>/
 
 # 5. 运行 FIR 滤波器数据门控多维全物理参数化扫描与收支平衡研究 (4/8/12/16-Tap)
 ./script/sweep_data_gating.py
+
+# 6. 运行格雷码计数器多维全物理参数化扫描与时钟/触发器减半研究 (4/8/16/32-Bit)
+./script/sweep_gray_counter.py
 ```

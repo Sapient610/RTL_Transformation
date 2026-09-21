@@ -15,8 +15,9 @@ BASE_IMG_DIR = Path(__file__).resolve().parent.parent / "doc" / "images"
 CG_DIR = BASE_IMG_DIR / "clock_gating"
 OI_DIR = BASE_IMG_DIR / "operand_isolation"
 DG_DIR = BASE_IMG_DIR / "data_gating"
+GC_DIR = BASE_IMG_DIR / "gray_counter"
 
-for d in [CG_DIR, OI_DIR, DG_DIR]:
+for d in [CG_DIR, OI_DIR, DG_DIR, GC_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -777,6 +778,289 @@ def gen_dg_tap_ranking_breakdown():
     write_svg_and_validate(DG_DIR / "dg_tap_ranking_breakdown.svg", "".join(out))
 
 
+# ==============================================================================
+# Category 4: Gray Code Counter
+# ==============================================================================
+def gen_gc_total_power_delta():
+    w, h = 840, 450
+    out = [svg_header(w, h)]
+    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：各规模在不同使能活跃度下的总功耗相对变化率</text>')
+    out.append('<text x="32" y="58" class="subtitle">基准时钟: 100MHz | 负值向下表示低功耗 RTL 变换带来的净节能收益率 (%)</text>')
+
+    x0, y0, cw, ch = 85, 85, 710, 275
+    y_min, y_max = -65, 10
+    zero_y = y0 + int(ch * (y_max - 0) / (y_max - y_min))
+
+    for val in range(-60, 11, 10):
+        y = y0 + int(ch * (y_max - val) / (y_max - y_min))
+        if val == 0:
+            out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="zero-line"/>')
+            out.append(f'<text x="{x0+cw+8}" y="{y+4}" class="tick-label" fill="#475569" font-weight="600">0% 基准线</text>')
+        else:
+            out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{y+4}" text-anchor="end" class="tick-label">{val:+d}%</text>')
+
+    groups = [
+        ("4-bit 计数器", [-22.45, -24.41, -26.12, -27.80]),
+        ("8-bit 计数器", [-28.67, -26.62, -23.49, -20.93]),
+        ("16-bit 计数器", [-46.18, -43.51, -39.86, -37.42]),
+        ("32-bit 计数器", [-54.01, -52.47, -50.08, -48.16]),
+    ]
+    bar_colors = ["url(#grad-green)", "url(#grad-blue)", "url(#grad-amber)", "url(#grad-red)"]
+
+    gw = cw / len(groups)
+    bw = 32
+    gap = 6
+
+    for gi, (name, vals) in enumerate(groups):
+        cx = x0 + gi * gw + gw / 2
+        total_w = len(vals) * bw + (len(vals) - 1) * gap
+        start_x = cx - total_w / 2
+
+        for vi, val in enumerate(vals):
+            bx = start_x + vi * (bw + gap)
+            bh = int(ch * abs(val) / (y_max - y_min))
+            by = zero_y
+
+            out.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" fill="{bar_colors[vi]}" rx="3" opacity="0.9"/>')
+            out.append(f'<text x="{bx+bw/2}" y="{by+bh+14}" text-anchor="middle" class="data-label" fill="#047857">{val:.1f}%</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+35}" text-anchor="middle" class="axis-label">{name}</text>')
+
+    lx, ly = x0 + 110, h - 14
+    legends = [
+        ("url(#grad-green)", "使能 5% 活跃度 (空闲突发)"),
+        ("url(#grad-blue)", "使能 20% 活跃度 (常规工况)"),
+        ("url(#grad-amber)", "使能 50% 活跃度 (平衡工况)"),
+        ("url(#grad-red)", "使能 80% 活跃度 (高频计数)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*155}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*155+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(GC_DIR / "gc_total_power_delta.svg", "".join(out))
+
+
+def gen_gc_power_breakdown():
+    w, h = 860, 460
+    out = [svg_header(w, h)]
+    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：四维内部微观功耗精细拆解对比 (Duty = 20%)</text>')
+    out.append('<text x="32" y="58" class="subtitle">单位: µW | 原始架构 (Naive 2N-DFF) vs 优化架构 (Direct N-DFF) 在时钟网络、时序单元与组合逻辑上的功耗重构</text>')
+
+    x0, y0, cw, ch = 85, 85, 730, 275
+    y_max = 660
+
+    for val in range(0, y_max + 1, 100):
+        y = y0 + int(ch * (y_max - val) / y_max)
+        out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{y+4}" text-anchor="end" class="tick-label">{val}</text>')
+
+    # 数据格式: (Scale, Orig_Clock, Orig_Seq, Orig_Comb, Orig_Total, Opt_Clock, Opt_Seq, Opt_Comb, Opt_Total)
+    data = [
+        ("4-bit", 69.6, 32.2, 8.81, 111.0, 60.9, 17.7, 5.22, 83.9),
+        ("8-bit", 77.6, 65.2, 11.1, 154.0, 65.8, 34.4, 13.0, 113.0),
+        ("16-bit", 145.0, 131.0, 9.09, 285.0, 77.4, 67.4, 15.9, 161.0),
+        ("32-bit", 335.0, 263.0, 9.31, 608.0, 139.0, 133.0, 17.2, 289.0),
+    ]
+
+    gw = cw / len(data)
+    bw = 48
+    gap = 14
+
+    for gi, (name, o_clk, o_seq, o_comb, o_tot, p_clk, p_seq, p_comb, p_tot) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 原始架构柱体 (堆叠: Clock -> Sequential -> Combinational)
+        bx_o = cx - bw - gap / 2
+        bh_o_clk = int(ch * o_clk / y_max)
+        bh_o_seq = int(ch * o_seq / y_max)
+        bh_o_comb = int(ch * o_comb / y_max)
+        bh_o_tot = int(ch * o_tot / y_max)
+
+        by_o_clk = y0 + ch - bh_o_clk
+        by_o_seq = by_o_clk - bh_o_seq
+        by_o_comb = by_o_seq - bh_o_comb
+
+        out.append(f'<rect x="{bx_o}" y="{by_o_clk}" width="{bw}" height="{bh_o_clk}" fill="#3b82f6" rx="2" opacity="0.9"/>')
+        out.append(f'<rect x="{bx_o}" y="{by_o_seq}" width="{bw}" height="{bh_o_seq}" fill="#93c5fd" rx="2" opacity="0.9"/>')
+        out.append(f'<rect x="{bx_o}" y="{by_o_comb}" width="{bw}" height="{bh_o_comb}" fill="#cbd5e1" rx="2" opacity="0.9"/>')
+        out.append(f'<text x="{bx_o+bw/2}" y="{y0+ch-bh_o_tot-6}" text-anchor="middle" class="data-label" fill="#1e293b">{o_tot:.0f}</text>')
+
+        # 优化架构柱体
+        bx_p = cx + gap / 2
+        bh_p_clk = int(ch * p_clk / y_max)
+        bh_p_seq = int(ch * p_seq / y_max)
+        bh_p_comb = int(ch * p_comb / y_max)
+        bh_p_tot = int(ch * p_tot / y_max)
+
+        by_p_clk = y0 + ch - bh_p_clk
+        by_p_seq = by_p_clk - bh_p_seq
+        by_p_comb = by_p_seq - bh_p_comb
+
+        pct = (p_tot - o_tot) / o_tot * 100
+        p_col = "#059669" if pct < 0 else "#dc2626"
+
+        out.append(f'<rect x="{bx_p}" y="{by_p_clk}" width="{bw}" height="{bh_p_clk}" fill="#0d9488" rx="2" opacity="0.9"/>')
+        out.append(f'<rect x="{bx_p}" y="{by_p_seq}" width="{bw}" height="{bh_p_seq}" fill="#5eead4" rx="2" opacity="0.9"/>')
+        out.append(f'<rect x="{bx_p}" y="{by_p_comb}" width="{bw}" height="{bh_p_comb}" fill="#fed7aa" rx="2" opacity="0.9"/>')
+        out.append(f'<text x="{bx_p+bw/2}" y="{y0+ch-bh_p_tot-6}" text-anchor="middle" class="data-label" fill="{p_col}">{p_tot:.0f} ({pct:+.1f}%)</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx_o+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">原始 (2N)</text>')
+        out.append(f'<text x="{bx_p+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">优化 (1N)</text>')
+
+    lx, ly = x0 + 40, h - 14
+    legends = [
+        ("#3b82f6", "原始-时钟网络功耗"),
+        ("#93c5fd", "原始-触发器内部功耗"),
+        ("#0d9488", "优化-时钟网络功耗 (-46%~-58%)"),
+        ("#5eead4", "优化-触发器功耗 (严格减半)"),
+        ("#fed7aa", "优化-异或组合逻辑功耗"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*145}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*145+18}" y="{ly}" class="legend-text" font-size="10px">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(GC_DIR / "gc_power_breakdown.svg", "".join(out))
+
+
+def gen_gc_area_breakdown():
+    w, h = 840, 440
+    out = [svg_header(w, h)]
+    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：DFF 寄存器减半与标准单元物理面积对比</text>')
+    out.append('<text x="32" y="58" class="subtitle">单位: um² | 绿柱为 DFF 数量削减收益，蓝柱为物理网表标准单元面积变化</text>')
+
+    x0, y0, cw, ch = 85, 85, 710, 265
+    y_max = 5000
+
+    for val in range(0, y_max + 1, 1000):
+        y = y0 + int(ch * (y_max - val) / y_max)
+        out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{y+4}" text-anchor="end" class="tick-label">{val}</text>')
+
+    # 数据: (Name, Orig_Area, Opt_Area, Orig_DFF, Opt_DFF, Delta_Area_Pct)
+    data = [
+        ("4-bit", 485.47, 361.60, 7, 4, -25.52),
+        ("8-bit", 929.64, 870.84, 15, 8, -6.33),
+        ("16-bit", 1846.77, 1900.57, 31, 16, +2.91),
+        ("32-bit", 3763.61, 4483.05, 63, 32, +19.12),
+    ]
+
+    gw = cw / len(data)
+    bw = 45
+    gap = 14
+
+    for gi, (name, o_area, p_area, o_dff, p_dff, d_pct) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        bx_o = cx - bw - gap / 2
+        bh_o = int(ch * o_area / y_max)
+        by_o = y0 + ch - bh_o
+        out.append(f'<rect x="{bx_o}" y="{by_o}" width="{bw}" height="{bh_o}" fill="#64748b" rx="2" opacity="0.85"/>')
+        out.append(f'<text x="{bx_o+bw/2}" y="{by_o-6}" text-anchor="middle" class="data-label" fill="#334155">{o_area:.0f}</text>')
+
+        bx_p = cx + gap / 2
+        bh_p = int(ch * p_area / y_max)
+        by_p = y0 + ch - bh_p
+        p_col = "#059669" if d_pct < 0 else "#2563eb"
+        out.append(f'<rect x="{bx_p}" y="{by_p}" width="{bw}" height="{bh_p}" fill="{p_col}" rx="2" opacity="0.85"/>')
+        out.append(f'<text x="{bx_p+bw/2}" y="{by_p-6}" text-anchor="middle" class="data-label" fill="{p_col}">{p_area:.0f} ({d_pct:+.1f}%)</text>')
+
+        # 标注 DFF 变化
+        out.append(f'<rect x="{cx-50}" y="{y0+ch+35}" width="100" height="20" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>')
+        out.append(f'<text x="{cx}" y="{y0+ch+49}" text-anchor="middle" class="data-label" fill="#0f172a">DFF: {o_dff} → {p_dff} (-50%)</text>')
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+
+    lx, ly = x0 + 130, h - 14
+    legends = [
+        ("#64748b", "原始设计标准单元面积 (um²)"),
+        ("#059669", "优化设计净面积缩减 (4b/8b)"),
+        ("#2563eb", "优化设计适度增加组合异或面积 (16b/32b)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*200}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*200+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(GC_DIR / "gc_area_breakdown.svg", "".join(out))
+
+
+def gen_gc_timing_delay():
+    w, h = 840, 440
+    out = [svg_header(w, h)]
+    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：关键路径延迟与时序建立裕量 (Setup WS) 变化</text>')
+    out.append('<text x="32" y="58" class="subtitle">时钟周期: 10.0ns (100MHz) | 异或前缀链引起延时线性增加，但 Setup WS 依然保持 4.95ns 以上充裕余量</text>')
+
+    x0, y0, cw, ch = 85, 85, 710, 265
+    y_max = 10.0
+
+    for val in range(0, 11, 2):
+        y = y0 + int(ch * (y_max - val) / y_max)
+        out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{y+4}" text-anchor="end" class="tick-label">{val}.0ns</text>')
+
+    # 数据: (Name, Orig_Delay, Opt_Delay, Orig_WS, Opt_WS)
+    data = [
+        ("4-bit", 0.891, 1.218, 8.988, 8.649),
+        ("8-bit", 1.199, 2.124, 8.674, 7.746),
+        ("16-bit", 1.610, 3.022, 8.268, 6.851),
+        ("32-bit", 2.992, 4.918, 6.887, 4.953),
+    ]
+
+    gw = cw / len(data)
+    bw = 36
+    gap = 8
+
+    for gi, (name, o_dly, p_dly, o_ws, p_ws) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 延时柱
+        bx1 = cx - 2 * bw - gap
+        bh1 = int(ch * o_dly / y_max)
+        by1 = y0 + ch - bh1
+        out.append(f'<rect x="{bx1}" y="{by1}" width="{bw}" height="{bh1}" fill="#94a3b8" rx="2"/>')
+        out.append(f'<text x="{bx1+bw/2}" y="{by1-6}" text-anchor="middle" class="data-label" fill="#475569">{o_dly:.2f}</text>')
+
+        bx2 = cx - bw - gap / 2
+        bh2 = int(ch * p_dly / y_max)
+        by2 = y0 + ch - bh2
+        out.append(f'<rect x="{bx2}" y="{by2}" width="{bw}" height="{bh2}" fill="#f59e0b" rx="2"/>')
+        out.append(f'<text x="{bx2+bw/2}" y="{by2-6}" text-anchor="middle" class="data-label" fill="#b45309">{p_dly:.2f}</text>')
+
+        # 建立时间裕量 (WS) 柱
+        bx3 = cx + gap / 2
+        bh3 = int(ch * o_ws / y_max)
+        by3 = y0 + ch - bh3
+        out.append(f'<rect x="{bx3}" y="{by3}" width="{bw}" height="{bh3}" fill="#60a5fa" rx="2"/>')
+        out.append(f'<text x="{bx3+bw/2}" y="{by3-6}" text-anchor="middle" class="data-label" fill="#1d4ed8">{o_ws:.2f}</text>')
+
+        bx4 = cx + bw + gap
+        bh4 = int(ch * p_ws / y_max)
+        by4 = y0 + ch - bh4
+        out.append(f'<rect x="{bx4}" y="{by4}" width="{bw}" height="{bh4}" fill="#10b981" rx="2"/>')
+        out.append(f'<text x="{bx4+bw/2}" y="{by4-6}" text-anchor="middle" class="data-label" fill="#047857">{p_ws:.2f}</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{cx-bw-gap/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">延时 (Dly)</text>')
+        out.append(f'<text x="{cx+bw+gap/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">裕量 (WS)</text>')
+
+    lx, ly = x0 + 60, h - 14
+    legends = [
+        ("#94a3b8", "原始-关键路径延时 (ns)"),
+        ("#f59e0b", "优化-关键路径延时 (ns)"),
+        ("#60a5fa", "原始-Setup Slack (ns)"),
+        ("#10b981", "优化-Setup Slack (裕量 > 4.9ns, 零违例)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*170}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*170+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(GC_DIR / "gc_timing_delay.svg", "".join(out))
+
+
 def main():
     print("Generating validated, categorized SVG comparison charts...")
     gen_cg_total_power_delta()
@@ -789,8 +1073,13 @@ def main():
     gen_dg_area_overhead()
     gen_dg_comb_power_reduction()
     gen_dg_tap_ranking_breakdown()
+    gen_gc_total_power_delta()
+    gen_gc_power_breakdown()
+    gen_gc_area_breakdown()
+    gen_gc_timing_delay()
     print("All charts generated and validated successfully!")
 
 
 if __name__ == "__main__":
     main()
+
