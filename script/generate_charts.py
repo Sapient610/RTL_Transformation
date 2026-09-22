@@ -918,17 +918,17 @@ def gen_gc_power_breakdown():
         out.append(f'<text x="{bx_o+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">二进制</text>')
         out.append(f'<text x="{bx_p+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">格雷码</text>')
 
-    lx, ly = x0 + 40, h - 14
+    lx, ly = 55, h - 14
     legends = [
-        ("#3b82f6", "二进制-时钟网络功耗"),
-        ("#93c5fd", "二进制-触发器内部功耗"),
-        ("#0d9488", "格雷码-时钟网络功耗"),
-        ("#5eead4", "格雷码-触发器功耗 (单比特翻转)"),
-        ("#fed7aa", "格雷码-异或组合逻辑功耗"),
+        ("#3b82f6", "二进制-时钟网络"),
+        ("#93c5fd", "二进制-触发器时序"),
+        ("#0d9488", "格雷码-时钟网络"),
+        ("#5eead4", "格雷码-触发器时序"),
+        ("#fed7aa", "格雷码-次态异或组合"),
     ]
     for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*145}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*145+18}" y="{ly}" class="legend-text" font-size="10px">{text}</text>')
+        out.append(f'<rect x="{lx+li*155}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*155+18}" y="{ly}" class="legend-text">{text}</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(GC_DIR / "gc_power_breakdown.svg", "".join(out))
