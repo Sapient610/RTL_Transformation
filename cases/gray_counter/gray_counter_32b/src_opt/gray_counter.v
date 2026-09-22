@@ -4,7 +4,7 @@ module gray_counter #(
     input  wire             clk,
     input  wire             rst_n,
     input  wire             en,
-    output wire [WIDTH-1:0] gray_out
+    output wire [WIDTH-1:0] count_out
 );
 
     reg [WIDTH-1:0] gray_cnt;
@@ -29,7 +29,6 @@ module gray_counter #(
         end
     end
 
-    assign gray_out = gray_cnt;
+    assign count_out = gray_cnt;
 
 endmodule
-

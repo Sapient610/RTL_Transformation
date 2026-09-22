@@ -8,7 +8,7 @@ import sys
 import logging
 import subprocess
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from src.common.env import run_command_with_logging
 
@@ -20,9 +20,11 @@ def run_formal_lec(
     formal_dir: Path,
     log_dir: Path,
     logger: logging.Logger,
+    gray_counter_width: Optional[int] = None,
 ):
     """
     通过 Yosys SAT 求解器执行层次化等价性比对，建立 Miter 电路严格断言。
+    若设置 gray_counter_width，则通过外置编码映射包装器对纯二进制计数器与格雷码计数器建立双射映射 Miter。
     若等价性未通过，立即触发熔断机制，终止后续物理实现流程。
     """
     logger.info("=" * 70)
@@ -31,8 +33,60 @@ def run_formal_lec(
 
     orig_files_str = " ".join(f'"{str(p)}"' for p in sources_orig)
     opt_files_str = " ".join(f'"{str(p)}"' for p in sources_opt)
+    formal_dir = formal_dir.resolve()
+    log_dir = log_dir.resolve()
 
-    lec_script = f"""
+    if gray_counter_width is not None:
+        wrapper_file = formal_dir / "lec_orig_wrapper.v"
+        wrapper_file.write_text(f"""
+module {top}_orig (
+    input  wire                          clk,
+    input  wire                          rst_n,
+    input  wire                          en,
+    output wire [{gray_counter_width-1}:0] count_out
+);
+    wire [{gray_counter_width-1}:0] bin_out;
+    {top}_core u_core (
+        .clk      (clk),
+        .rst_n    (rst_n),
+        .en       (en),
+        .count_out(bin_out)
+    );
+    assign count_out = (bin_out >> 1) ^ bin_out;
+endmodule
+""", encoding="utf-8")
+
+        lec_script = f"""
+    read_verilog -sv {orig_files_str}
+    hierarchy -top {top}
+    flatten
+    rename {top} {top}_core
+    read_verilog -sv "{wrapper_file}"
+    hierarchy -top {top}_orig
+    flatten
+    design -save orig_des
+    design -reset
+
+    read_verilog -sv {opt_files_str}
+    hierarchy -top {top}
+    flatten
+    rename {top} {top}_opt
+
+    design -copy-from orig_des {top}_orig {top}_orig
+
+    proc
+    clk2fflogic
+
+    equiv_make {top}_orig {top}_opt miter
+    hierarchy -top miter
+    flatten
+
+    equiv_simple
+    equiv_induct
+    equiv_status -assert
+    """
+    else:
+        lec_script = f"""
     read_verilog -sv {orig_files_str}
     hierarchy -top {top}
     flatten
@@ -58,8 +112,7 @@ def run_formal_lec(
     equiv_induct
     equiv_status -assert
     """
-    formal_dir = formal_dir.resolve()
-    log_dir = log_dir.resolve()
+
     script_path = formal_dir / "lec.ys"
     script_path.write_text(lec_script, encoding="utf-8")
     lec_log = log_dir / "yosys_lec.log"
@@ -71,4 +124,3 @@ def run_formal_lec(
         logger.error(f"[FAIL] Functional Equivalence Check Failed! Circuit breaker triggered.")
         logger.error(f"       Inspect detailed SAT diagnostic log at: {lec_log}")
         sys.exit(1)
-

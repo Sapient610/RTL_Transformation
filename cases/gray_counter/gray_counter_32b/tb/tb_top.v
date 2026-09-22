@@ -3,16 +3,16 @@
 module tb_top;
     localparam WIDTH = 32;
 
-    reg              clk;
-    reg              rst_n;
-    reg              en;
-    wire [WIDTH-1:0] gray_out;
+    reg             clk;
+    reg             rst_n;
+    reg             en;
+    wire [WIDTH-1:0] count_out;
 
     gray_counter u_dut (
-        .clk     (clk),
-        .rst_n   (rst_n),
-        .en      (en),
-        .gray_out(gray_out)
+        .clk      (clk),
+        .rst_n    (rst_n),
+        .en       (en),
+        .count_out(count_out)
     );
 
     // 100MHz 主频时钟 (周期 10ns)
@@ -59,4 +59,3 @@ module tb_top;
         $finish;
     end
 endmodule
-

@@ -279,6 +279,6 @@ eval_workspace/<category>/<case_name>/
 # 5. 运行 FIR 滤波器数据门控多维全物理参数化扫描与收支平衡研究 (4/8/12/16-Tap)
 ./script/sweep_data_gating.py
 
-# 6. 运行格雷码计数器多维全物理参数化扫描与时钟/触发器减半研究 (4/8/16/32-Bit)
+# 6. 运行格雷码计数器多维全物理参数化扫描与纯二进制计数器对比研究 (4/8/16/32-Bit)
 ./script/sweep_gray_counter.py
 ```

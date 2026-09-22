@@ -784,27 +784,28 @@ def gen_dg_tap_ranking_breakdown():
 def gen_gc_total_power_delta():
     w, h = 840, 450
     out = [svg_header(w, h)]
-    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：各规模在不同使能活跃度下的总功耗相对变化率</text>')
-    out.append('<text x="32" y="58" class="subtitle">基准时钟: 100MHz | 负值向下表示低功耗 RTL 变换带来的净节能收益率 (%)</text>')
+    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：各规模在不同使能活跃度下的总功耗变化率</text>')
+    out.append('<text x="32" y="58" class="subtitle">基准时钟: 100MHz | 基准: 纯二进制累加计数器 (N DFF) | 负值向下为节能收益，正值向上为次态异或开销反噬</text>')
 
     x0, y0, cw, ch = 85, 85, 710, 275
-    y_min, y_max = -65, 10
+    y_min, y_max = -15, 20
+
     zero_y = y0 + int(ch * (y_max - 0) / (y_max - y_min))
 
-    for val in range(-60, 11, 10):
+    for val in range(-15, 21, 5):
         y = y0 + int(ch * (y_max - val) / (y_max - y_min))
         if val == 0:
             out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="zero-line"/>')
-            out.append(f'<text x="{x0+cw+8}" y="{y+4}" class="tick-label" fill="#475569" font-weight="600">0% 基准线</text>')
+            out.append(f'<text x="{x0+cw+8}" y="{y+4}" class="tick-label" fill="#475569" font-weight="600">0% 损益平衡线</text>')
         else:
             out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="grid-line"/>')
         out.append(f'<text x="{x0-10}" y="{y+4}" text-anchor="end" class="tick-label">{val:+d}%</text>')
 
     groups = [
-        ("4-bit 计数器", [-22.45, -24.41, -26.12, -27.80]),
-        ("8-bit 计数器", [-28.67, -26.62, -23.49, -20.93]),
-        ("16-bit 计数器", [-46.18, -43.51, -39.86, -37.42]),
-        ("32-bit 计数器", [-54.01, -52.47, -50.08, -48.16]),
+        ("4-bit 计数器", [-0.63, -3.12, -5.60, -7.47]),
+        ("8-bit 计数器", [+0.99, +3.67, +7.63, +10.57]),
+        ("16-bit 计数器", [-3.90, 0.00, +5.33, +8.62]),
+        ("32-bit 计数器", [+4.59, +6.90, +10.74, +13.49]),
     ]
     bar_colors = ["url(#grad-green)", "url(#grad-blue)", "url(#grad-amber)", "url(#grad-red)"]
 
@@ -820,10 +821,17 @@ def gen_gc_total_power_delta():
         for vi, val in enumerate(vals):
             bx = start_x + vi * (bw + gap)
             bh = int(ch * abs(val) / (y_max - y_min))
-            by = zero_y
+            if val < 0:
+                by = zero_y
+                lbl_y = by + bh + 14
+                lbl_col = "#047857"
+            else:
+                by = zero_y - bh
+                lbl_y = by - 5
+                lbl_col = "#dc2626"
 
             out.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" fill="{bar_colors[vi]}" rx="3" opacity="0.9"/>')
-            out.append(f'<text x="{bx+bw/2}" y="{by+bh+14}" text-anchor="middle" class="data-label" fill="#047857">{val:.1f}%</text>')
+            out.append(f'<text x="{bx+bw/2}" y="{lbl_y}" text-anchor="middle" class="data-label" fill="{lbl_col}">{val:+.1f}%</text>')
 
         out.append(f'<text x="{cx}" y="{y0+ch+35}" text-anchor="middle" class="axis-label">{name}</text>')
 
@@ -846,22 +854,22 @@ def gen_gc_power_breakdown():
     w, h = 860, 460
     out = [svg_header(w, h)]
     out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：四维内部微观功耗精细拆解对比 (Duty = 20%)</text>')
-    out.append('<text x="32" y="58" class="subtitle">单位: µW | 原始架构 (Naive 2N-DFF) vs 优化架构 (Direct N-DFF) 在时钟网络、时序单元与组合逻辑上的功耗重构</text>')
+    out.append('<text x="32" y="58" class="subtitle">单位: µW | 纯二进制基准 (Binary N-DFF) vs 原生格雷码 (Gray N-DFF) 在时钟网络、时序单元与组合逻辑上的功耗重构</text>')
 
     x0, y0, cw, ch = 85, 85, 730, 275
-    y_max = 660
+    y_max = 350
 
-    for val in range(0, y_max + 1, 100):
+    for val in range(0, y_max + 1, 50):
         y = y0 + int(ch * (y_max - val) / y_max)
         out.append(f'<line x1="{x0}" y1="{y}" x2="{x0+cw}" y2="{y}" class="grid-line"/>')
         out.append(f'<text x="{x0-10}" y="{y+4}" text-anchor="end" class="tick-label">{val}</text>')
 
     # 数据格式: (Scale, Orig_Clock, Orig_Seq, Orig_Comb, Orig_Total, Opt_Clock, Opt_Seq, Opt_Comb, Opt_Total)
     data = [
-        ("4-bit", 69.6, 32.2, 8.81, 111.0, 60.9, 17.7, 5.22, 83.9),
-        ("8-bit", 77.6, 65.2, 11.1, 154.0, 65.8, 34.4, 13.0, 113.0),
-        ("16-bit", 145.0, 131.0, 9.09, 285.0, 77.4, 67.4, 15.9, 161.0),
-        ("32-bit", 335.0, 263.0, 9.31, 608.0, 139.0, 133.0, 17.2, 289.0),
+        ("4-bit", 60.7, 18.8, 7.12, 86.6, 60.9, 17.7, 5.22, 83.9),
+        ("8-bit", 66.1, 35.4, 7.26, 109.0, 65.8, 34.4, 13.0, 113.0),
+        ("16-bit", 85.5, 68.5, 6.70, 161.0, 77.7, 67.3, 15.9, 161.0),
+        ("32-bit", 149.0, 135.0, 6.78, 290.0, 160.0, 133.0, 17.2, 310.0),
     ]
 
     gw = cw / len(data)
@@ -899,7 +907,7 @@ def gen_gc_power_breakdown():
         by_p_comb = by_p_seq - bh_p_comb
 
         pct = (p_tot - o_tot) / o_tot * 100
-        p_col = "#059669" if pct < 0 else "#dc2626"
+        p_col = "#059669" if pct < 0 else ("#2563eb" if pct == 0 else "#dc2626")
 
         out.append(f'<rect x="{bx_p}" y="{by_p_clk}" width="{bw}" height="{bh_p_clk}" fill="#0d9488" rx="2" opacity="0.9"/>')
         out.append(f'<rect x="{bx_p}" y="{by_p_seq}" width="{bw}" height="{bh_p_seq}" fill="#5eead4" rx="2" opacity="0.9"/>')
@@ -907,16 +915,16 @@ def gen_gc_power_breakdown():
         out.append(f'<text x="{bx_p+bw/2}" y="{y0+ch-bh_p_tot-6}" text-anchor="middle" class="data-label" fill="{p_col}">{p_tot:.0f} ({pct:+.1f}%)</text>')
 
         out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
-        out.append(f'<text x="{bx_o+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">原始 (2N)</text>')
-        out.append(f'<text x="{bx_p+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">优化 (1N)</text>')
+        out.append(f'<text x="{bx_o+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">二进制</text>')
+        out.append(f'<text x="{bx_p+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">格雷码</text>')
 
     lx, ly = x0 + 40, h - 14
     legends = [
-        ("#3b82f6", "原始-时钟网络功耗"),
-        ("#93c5fd", "原始-触发器内部功耗"),
-        ("#0d9488", "优化-时钟网络功耗 (-46%~-58%)"),
-        ("#5eead4", "优化-触发器功耗 (严格减半)"),
-        ("#fed7aa", "优化-异或组合逻辑功耗"),
+        ("#3b82f6", "二进制-时钟网络功耗"),
+        ("#93c5fd", "二进制-触发器内部功耗"),
+        ("#0d9488", "格雷码-时钟网络功耗"),
+        ("#5eead4", "格雷码-触发器功耗 (单比特翻转)"),
+        ("#fed7aa", "格雷码-异或组合逻辑功耗"),
     ]
     for li, (col, text) in enumerate(legends):
         out.append(f'<rect x="{lx+li*145}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
@@ -929,8 +937,8 @@ def gen_gc_power_breakdown():
 def gen_gc_area_breakdown():
     w, h = 840, 440
     out = [svg_header(w, h)]
-    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：DFF 寄存器减半与标准单元物理面积对比</text>')
-    out.append('<text x="32" y="58" class="subtitle">单位: um² | 绿柱为 DFF 数量削减收益，蓝柱为物理网表标准单元面积变化</text>')
+    out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：等量 DFF (N vs N) 与次态组合逻辑面积对比</text>')
+    out.append('<text x="32" y="58" class="subtitle">单位: um² | 触发器严格等量 (N vs N)；柱体反映格雷码次态前缀异或网络带来的标准单元物理面积开销</text>')
 
     x0, y0, cw, ch = 85, 85, 710, 265
     y_max = 5000
@@ -942,10 +950,10 @@ def gen_gc_area_breakdown():
 
     # 数据: (Name, Orig_Area, Opt_Area, Orig_DFF, Opt_DFF, Delta_Area_Pct)
     data = [
-        ("4-bit", 485.47, 361.60, 7, 4, -25.52),
-        ("8-bit", 929.64, 870.84, 15, 8, -6.33),
-        ("16-bit", 1846.77, 1900.57, 31, 16, +2.91),
-        ("32-bit", 3763.61, 4483.05, 63, 32, +19.12),
+        ("4-bit", 327.81, 361.60, 4, 4, +10.31),
+        ("8-bit", 578.05, 870.84, 8, 8, +50.65),
+        ("16-bit", 1098.55, 1900.57, 16, 16, +73.01),
+        ("32-bit", 2173.33, 4511.83, 32, 32, +107.59),
     ]
 
     gw = cw / len(data)
@@ -964,24 +972,23 @@ def gen_gc_area_breakdown():
         bx_p = cx + gap / 2
         bh_p = int(ch * p_area / y_max)
         by_p = y0 + ch - bh_p
-        p_col = "#059669" if d_pct < 0 else "#2563eb"
+        p_col = "#2563eb"
         out.append(f'<rect x="{bx_p}" y="{by_p}" width="{bw}" height="{bh_p}" fill="{p_col}" rx="2" opacity="0.85"/>')
         out.append(f'<text x="{bx_p+bw/2}" y="{by_p-6}" text-anchor="middle" class="data-label" fill="{p_col}">{p_area:.0f} ({d_pct:+.1f}%)</text>')
 
-        # 标注 DFF 变化
+        # 标注 DFF 等量
         out.append(f'<rect x="{cx-50}" y="{y0+ch+35}" width="100" height="20" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>')
-        out.append(f'<text x="{cx}" y="{y0+ch+49}" text-anchor="middle" class="data-label" fill="#0f172a">DFF: {o_dff} → {p_dff} (-50%)</text>')
+        out.append(f'<text x="{cx}" y="{y0+ch+49}" text-anchor="middle" class="data-label" fill="#0f172a">DFF: {o_dff} vs {p_dff} (等量)</text>')
         out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
 
     lx, ly = x0 + 130, h - 14
     legends = [
-        ("#64748b", "原始设计标准单元面积 (um²)"),
-        ("#059669", "优化设计净面积缩减 (4b/8b)"),
-        ("#2563eb", "优化设计适度增加组合异或面积 (16b/32b)"),
+        ("#64748b", "二进制计数器面积 (进位半加链 um²)"),
+        ("#2563eb", "格雷码计数器面积 (异或次态网络增生 um²)"),
     ]
     for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*200}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*200+18}" y="{ly}" class="legend-text">{text}</text>')
+        out.append(f'<rect x="{lx+li*260}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*260+18}" y="{ly}" class="legend-text">{text}</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(GC_DIR / "gc_area_breakdown.svg", "".join(out))
@@ -991,7 +998,7 @@ def gen_gc_timing_delay():
     w, h = 840, 440
     out = [svg_header(w, h)]
     out.append('<text x="32" y="38" class="title">Sky130 格雷码计数器：关键路径延迟与时序建立裕量 (Setup WS) 变化</text>')
-    out.append('<text x="32" y="58" class="subtitle">时钟周期: 10.0ns (100MHz) | 异或前缀链引起延时线性增加，但 Setup WS 依然保持 4.95ns 以上充裕余量</text>')
+    out.append('<text x="32" y="58" class="subtitle">时钟周期: 10.0ns (100MHz) | 次态异或树导致反馈路径延时增加，但 100MHz 下仍保持 4.91ns 以上充裕余量</text>')
 
     x0, y0, cw, ch = 85, 85, 710, 265
     y_max = 10.0
@@ -1003,10 +1010,10 @@ def gen_gc_timing_delay():
 
     # 数据: (Name, Orig_Delay, Opt_Delay, Orig_WS, Opt_WS)
     data = [
-        ("4-bit", 0.891, 1.218, 8.988, 8.649),
-        ("8-bit", 1.199, 2.124, 8.674, 7.746),
-        ("16-bit", 1.610, 3.022, 8.268, 6.851),
-        ("32-bit", 2.992, 4.918, 6.887, 4.953),
+        ("4-bit", 0.889, 1.218, 8.988, 8.649),
+        ("8-bit", 1.166, 2.122, 8.712, 7.747),
+        ("16-bit", 1.515, 3.009, 8.360, 6.864),
+        ("32-bit", 2.094, 4.956, 7.785, 4.914),
     ]
 
     gw = cw / len(data)
@@ -1048,10 +1055,10 @@ def gen_gc_timing_delay():
 
     lx, ly = x0 + 60, h - 14
     legends = [
-        ("#94a3b8", "原始-关键路径延时 (ns)"),
-        ("#f59e0b", "优化-关键路径延时 (ns)"),
-        ("#60a5fa", "原始-Setup Slack (ns)"),
-        ("#10b981", "优化-Setup Slack (裕量 > 4.9ns, 零违例)"),
+        ("#94a3b8", "二进制-关键路径延时 (ns)"),
+        ("#f59e0b", "格雷码-关键路径延时 (ns)"),
+        ("#60a5fa", "二进制-Setup Slack (ns)"),
+        ("#10b981", "格雷码-Setup Slack (裕量 > 4.9ns, 零违例)"),
     ]
     for li, (col, text) in enumerate(legends):
         out.append(f'<rect x="{lx+li*170}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')

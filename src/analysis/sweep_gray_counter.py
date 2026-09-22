@@ -13,6 +13,7 @@ src/analysis/sweep_gray_counter.py
 
   物理架构对比:
     - 原始版本 (Orig): Naive Dual-Register Binary-to-Gray 发生器 (2N 个 DFF)
+    - 原始版本 (Orig): Pure Standard Binary Counter (N 个 DFF)
     - 优化版本 (Opt): Native Single-Register Direct Gray 发生器 (N 个 DFF)
 ===============================================================================
 """
@@ -295,7 +296,7 @@ def run_gray_counter_sweep(
         clock_period = float(meta.get("clock_period_ns", 10.0))
 
         # Step 1: Formal LEC
-        run_formal_lec(sources_orig, sources_opt, top, formal_dir, case_log_dir, logger)
+        run_formal_lec(sources_orig, sources_opt, top, formal_dir, case_log_dir, logger, gray_counter_width=width)
 
         # Step 2: Physical Implementation (LibreLane 80-Stage)
         def get_pnr_artifacts(tag: str) -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
@@ -400,6 +401,7 @@ def run_gray_counter_sweep(
             "orig_stdcell_area_um2": area_orig.get("Stdcell_Area_um2", "N/A"),
             "opt_stdcell_area_um2": area_opt.get("Stdcell_Area_um2", "N/A"),
             "orig_dff_count": area_orig.get("DFF_Count", 2 * width),
+            "orig_dff_count": area_orig.get("DFF_Count", width),
             "opt_dff_count": area_opt.get("DFF_Count", width),
         }
 
