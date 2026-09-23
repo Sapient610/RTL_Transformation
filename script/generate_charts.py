@@ -1143,12 +1143,12 @@ def gen_ohm_total_power_delta():
 
 def gen_ohm_power_breakdown():
     """独热编码 vs 二进制多路选择器内部微观功耗精细拆解对比图 (Duty=50%)"""
-    w, h = 900, 500
+    w, h = 940, 520
     out = [svg_header(w, h)]
-    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 二进制 MUX 树 vs 原生独热 MUX 内部微观功耗拆解对比 (Duty=50%)</text>')
-    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">微观物理分量：时钟网络 (Clock)、触发器时序 (Sequential)、组合逻辑 (Combinational)</text>')
+    out.append(f'<text x="{w/2}" y="34" text-anchor="middle" class="title">Sky130 二进制 MUX 树 vs 原生独热 MUX 内部微观功耗拆解对比 (Duty=50%)</text>')
+    out.append(f'<text x="{w/2}" y="54" text-anchor="middle" class="subtitle">微观物理分量：时钟网络 (Clock)、触发器时序 (Sequential)、组合逻辑 (Combinational) 与各部分相对变化率</text>')
 
-    x0, y0, cw, ch = 80, 80, 760, 340
+    x0, y0, cw, ch = 80, 95, 780, 310
     y_max = 750.0
 
     for tick in range(0, 800, 100):
@@ -1157,53 +1157,68 @@ def gen_ohm_power_breakdown():
         out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} µW</text>')
 
     data = [
-        ("4-to-1", (63.9, 44.5, 92.7), (64.8, 45.6, 86.7)),
-        ("8-to-1", (65.3, 44.7, 162.0), (63.9, 44.6, 154.0)),
-        ("16-to-1", (66.1, 45.2, 288.0), (64.8, 45.6, 272.0)),
-        ("32-to-1", (66.6, 45.3, 549.0), (65.7, 44.5, 523.0)),
+        ("4-to-1 MUX", (63.9, 44.5, 92.7), (64.8, 45.6, 86.7)),
+        ("8-to-1 MUX", (65.3, 44.7, 162.0), (63.9, 44.6, 154.0)),
+        ("16-to-1 MUX", (66.1, 45.2, 288.0), (64.8, 45.6, 272.0)),
+        ("32-to-1 MUX", (66.6, 45.3, 549.0), (65.7, 44.5, 523.0)),
     ]
 
     gw = cw / len(data)
-    bw = 42
+    bw = 44
     gap = 14
 
     for gi, (name, orig_parts, opt_parts) in enumerate(data):
         cx = x0 + gi * gw + gw / 2
 
+        tot1 = sum(orig_parts)
+        tot2 = sum(opt_parts)
+        d_clk = (opt_parts[0] - orig_parts[0]) / orig_parts[0] * 100.0
+        d_seq = (opt_parts[1] - orig_parts[1]) / orig_parts[1] * 100.0
+        d_comb = (opt_parts[2] - orig_parts[2]) / orig_parts[2] * 100.0
+        d_tot = (tot2 - tot1) / tot1 * 100.0
+
+        # 各分量相对变化指标标签 (在每组顶部清晰标明)
+        out.append(f'<rect x="{cx-95}" y="{y0-24}" width="190" height="18" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>')
+        out.append(f'<text x="{cx}" y="{y0-11}" text-anchor="middle" font-size="9.5px" font-weight="600" fill="#334155">ΔComb: <tspan fill="#047857" font-weight="700">{d_comb:+.1f}%</tspan> | ΔSeq: {d_seq:+.1f}% | ΔClk: {d_clk:+.1f}%</text>')
+
         # 原始柱 (Orig)
         bx1 = cx - bw - gap / 2
         cy1 = y0 + ch
-        for val, col in zip(orig_parts, ["#94a3b8", "#38bdf8", "#f43f5e"]):
+        for vi, (val, col) in enumerate(zip(orig_parts, ["#94a3b8", "#38bdf8", "#f43f5e"])):
             bh = int(ch * val / y_max)
             cy1 -= bh
             out.append(f'<rect x="{bx1}" y="{cy1}" width="{bw}" height="{bh}" fill="{col}"/>')
-        tot1 = sum(orig_parts)
-        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#0f172a">{tot1:.1f}</text>')
+            if bh >= 16:
+                out.append(f'<text x="{bx1+bw/2}" y="{cy1+bh/2+4}" text-anchor="middle" font-size="10px" font-weight="600" fill="#ffffff">{val:.0f}</text>')
+
+        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#475569">{tot1:.1f}</text>')
 
         # 优化柱 (Opt)
         bx2 = cx + gap / 2
         cy2 = y0 + ch
-        for val, col in zip(opt_parts, ["#64748b", "#0284c7", "#10b981"]):
+        for vi, (val, col) in enumerate(zip(opt_parts, ["#64748b", "#0284c7", "#10b981"])):
             bh = int(ch * val / y_max)
             cy2 -= bh
             out.append(f'<rect x="{bx2}" y="{cy2}" width="{bw}" height="{bh}" fill="{col}"/>')
-        tot2 = sum(opt_parts)
-        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#047857">{tot2:.1f}</text>')
+            if bh >= 16:
+                out.append(f'<text x="{bx2+bw/2}" y="{cy2+bh/2+4}" text-anchor="middle" font-size="10px" font-weight="600" fill="#ffffff">{val:.0f}</text>')
 
-        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
-        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">二进制</text>')
-        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">独热码</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#047857">{tot2:.1f} ({d_tot:+.1f}%)</text>')
 
-    lx, ly = x0 + 30, h - 14
+        out.append(f'<text x="{cx}" y="{y0+ch+20}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+34}" text-anchor="middle" class="tick-label">二进制</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+34}" text-anchor="middle" class="tick-label" font-weight="600" fill="#047857">独热码</text>')
+
+    lx, ly = x0 + 10, h - 14
     legends = [
-        ("#94a3b8", "时钟树功耗 (Clock)"),
-        ("#38bdf8", "时序触发器功耗 (Seq)"),
-        ("#f43f5e", "二进制-组合逻辑功耗 (Tree)"),
-        ("#10b981", "独热码-组合逻辑功耗 (AND-OR 显著降低)"),
+        ("#94a3b8", "时钟树功耗 (Clock: ~0%)"),
+        ("#38bdf8", "时序触发器功耗 (Seq: ~0%)"),
+        ("#f43f5e", "二进制-组合逻辑 (Tree)"),
+        ("#10b981", "独热码-组合逻辑 (AND-OR 净降 -4.7% ~ -6.5%)"),
     ]
     for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*190}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*190+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+        out.append(f'<rect x="{lx+li*195}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*195+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(OHM_DIR / "ohm_power_breakdown.svg", "".join(out))
@@ -1425,12 +1440,12 @@ def gen_bi_total_power_delta():
 
 def gen_bi_power_breakdown():
     """Sky130 原始总线 vs 总线反转 (Bus-Invert) 内部微观功耗拆解对比 (Toggle Rate=60%)"""
-    w, h = 920, 500
+    w, h = 940, 520
     out = [svg_header(w, h)]
-    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 原始总线 vs 总线反转 (Bus-Invert) 内部微观功耗拆解对比 (Toggle Rate=60%)</text>')
-    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">微观物理分量：时钟网络 (Clock)、触发器时序 (Sequential)、组合逻辑编码/解码 (Combinational)</text>')
+    out.append(f'<text x="{w/2}" y="34" text-anchor="middle" class="title">Sky130 原始总线 vs 总线反转 (Bus-Invert) 内部微观功耗拆解对比 (Toggle Rate=60%)</text>')
+    out.append(f'<text x="{w/2}" y="54" text-anchor="middle" class="subtitle">微观物理分量：时钟网络 (Clock)、触发器时序 (Sequential)、组合逻辑编码/解码 (Combinational) 与各部分相对变化率</text>')
 
-    x0, y0, cw, ch = 80, 80, 780, 340
+    x0, y0, cw, ch = 80, 95, 780, 310
     y_max = 3500.0
 
     for tick in range(0, 4000, 500):
@@ -1453,40 +1468,55 @@ def gen_bi_power_breakdown():
     for gi, (name, orig_parts, opt_parts) in enumerate(data):
         cx = x0 + gi * gw + gw / 2
 
+        tot1 = sum(orig_parts)
+        tot2 = sum(opt_parts)
+        d_clk = (opt_parts[0] - orig_parts[0]) / orig_parts[0] * 100.0
+        d_seq = (opt_parts[1] - orig_parts[1]) / orig_parts[1] * 100.0
+        d_comb = (opt_parts[2] - orig_parts[2]) / orig_parts[2] * 100.0
+        d_tot = (tot2 - tot1) / tot1 * 100.0
+
+        # 各分量相对变化指标标签 (在每组顶部清晰标明)
+        out.append(f'<rect x="{cx-95}" y="{y0-24}" width="190" height="18" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>')
+        out.append(f'<text x="{cx}" y="{y0-11}" text-anchor="middle" font-size="9.5px" font-weight="600" fill="#334155">ΔComb: <tspan fill="#b45309" font-weight="700">+{d_comb:.0f}%</tspan> | ΔSeq: {d_seq:+.0f}% | ΔClk: {d_clk:+.0f}%</text>')
+
         # 原始柱 (Orig)
         bx1 = cx - bw - gap / 2
         cy1 = y0 + ch
-        for val, col in zip(orig_parts, ["#94a3b8", "#38bdf8", "#f43f5e"]):
+        for vi, (val, col) in enumerate(zip(orig_parts, ["#94a3b8", "#38bdf8", "#f43f5e"])):
             bh = int(ch * val / y_max)
             cy1 -= bh
             out.append(f'<rect x="{bx1}" y="{cy1}" width="{bw}" height="{bh}" fill="{col}"/>')
-        tot1 = sum(orig_parts)
-        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#0f172a">{tot1:.0f}</text>')
+            if bh >= 16:
+                out.append(f'<text x="{bx1+bw/2}" y="{cy1+bh/2+4}" text-anchor="middle" font-size="10px" font-weight="600" fill="#ffffff">{val:.0f}</text>')
+
+        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#475569">{tot1:.0f}</text>')
 
         # 优化柱 (Opt)
         bx2 = cx + gap / 2
         cy2 = y0 + ch
-        for val, col in zip(opt_parts, ["#64748b", "#0284c7", "#f59e0b"]):
+        for vi, (val, col) in enumerate(zip(opt_parts, ["#64748b", "#0284c7", "#f59e0b"])):
             bh = int(ch * val / y_max)
             cy2 -= bh
             out.append(f'<rect x="{bx2}" y="{cy2}" width="{bw}" height="{bh}" fill="{col}"/>')
-        tot2 = sum(opt_parts)
-        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#b45309">{tot2:.0f}</text>')
+            if bh >= 16:
+                out.append(f'<text x="{bx2+bw/2}" y="{cy2+bh/2+4}" text-anchor="middle" font-size="10px" font-weight="600" fill="#ffffff">{val:.0f}</text>')
 
-        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
-        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">原始总线</text>')
-        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">Bus-Invert</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#b45309">{tot2:.0f} (+{d_tot:.1f}%)</text>')
 
-    lx, ly = x0 + 40, h - 14
+        out.append(f'<text x="{cx}" y="{y0+ch+20}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+34}" text-anchor="middle" class="tick-label">原始总线</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+34}" text-anchor="middle" class="tick-label" font-weight="600" fill="#b45309">Bus-Invert</text>')
+
+    lx, ly = x0 + 15, h - 14
     legends = [
-        ("#94a3b8", "时钟网络功耗 (Clock)"),
-        ("#38bdf8", "时序寄存器功耗 (Sequential)"),
-        ("#f43f5e", "原始总线组合逻辑 (Combinational)"),
-        ("#f59e0b", "Bus-Invert 组合逻辑 (加法树与异或开销)"),
+        ("#94a3b8", "时钟网络 (Clock: ~0%)"),
+        ("#38bdf8", "时序寄存器 (Seq: +9%~+18%)"),
+        ("#f43f5e", "原始总线组合逻辑 (Comb)"),
+        ("#f59e0b", "Bus-Invert 组合逻辑 (PopCount 加法树暴增 +369%~+685%)"),
     ]
     for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*190}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*190+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+        out.append(f'<rect x="{lx+li*205}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*205+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(BI_DIR / "bi_power_breakdown.svg", "".join(out))
