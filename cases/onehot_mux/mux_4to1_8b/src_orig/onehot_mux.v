@@ -1,0 +1,41 @@
+// ==============================================================================
+// 纯二进制编码多路选择器 (Pure Binary-Coded Multiplexer) - 4-to-1 / 8-bit
+// cases/onehot_mux/mux_4to1_8b/src_orig/onehot_mux.v
+//
+// 原始架构：
+//   - 选择信号为标准 2-bit 二进制码 (sel[1:0])
+//   - 综合工具根据 sel 自动构建对数级平衡 MUX 树 (Tree-based MUX)
+//   - 输出级挂载标准 D 触发器构成单级流水线时序边界
+// ==============================================================================
+
+module onehot_mux #(
+    parameter CHANNELS = 4,
+    parameter WIDTH    = 8,
+    parameter SEL_W    = 2
+) (
+    input  wire                     clk,
+    input  wire                     rst_n,
+    input  wire [SEL_W-1:0]         sel,
+    input  wire [CHANNELS*WIDTH-1:0] data_in,
+    output reg  [WIDTH-1:0]         data_out
+);
+    wire [WIDTH-1:0] ch_data [0:CHANNELS-1];
+    genvar i;
+    generate
+        for (i = 0; i < CHANNELS; i = i + 1) begin : gen_ch
+            assign ch_data[i] = data_in[i*WIDTH +: WIDTH];
+        end
+    endgenerate
+
+    // 纯二进制多路选择 (典型 MUX 树)
+    wire [WIDTH-1:0] mux_wire = ch_data[sel];
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            data_out <= {WIDTH{1'b0}};
+        end else begin
+            data_out <= mux_wire;
+        end
+    end
+endmodule
+

@@ -21,10 +21,12 @@ def run_formal_lec(
     log_dir: Path,
     logger: logging.Logger,
     gray_counter_width: Optional[int] = None,
+    onehot_mux_params: Optional[dict] = None,
 ):
     """
     通过 Yosys SAT 求解器执行层次化等价性比对，建立 Miter 电路严格断言。
     若设置 gray_counter_width，则通过外置编码映射包装器对纯二进制计数器与格雷码计数器建立双射映射 Miter。
+    若设置 onehot_mux_params，则通过独热码解码包装器 (1 << sel) 对二进制 MUX 与独热 MUX 建立双射映射 Miter。
     若等价性未通过，立即触发熔断机制，终止后续物理实现流程。
     """
     logger.info("=" * 70)
@@ -71,6 +73,60 @@ endmodule
     hierarchy -top {top}
     flatten
     rename {top} {top}_opt
+
+    design -copy-from orig_des {top}_orig {top}_orig
+
+    proc
+    clk2fflogic
+
+    equiv_make {top}_orig {top}_opt miter
+    hierarchy -top miter
+    flatten
+
+    equiv_simple
+    equiv_induct
+    equiv_status -assert
+    """
+    elif onehot_mux_params is not None:
+        channels = onehot_mux_params["channels"]
+        width = onehot_mux_params["width"]
+        sel_w = onehot_mux_params["sel_w"]
+
+        wrapper_file = formal_dir / "lec_opt_wrapper.v"
+        wrapper_file.write_text(f"""
+module {top}_opt (
+    input  wire                               clk,
+    input  wire                               rst_n,
+    input  wire [{sel_w-1}:0]                 sel,
+    input  wire [{channels*width-1}:0]        data_in,
+    output wire [{width-1}:0]                 data_out
+);
+    wire [{channels-1}:0] sel_onehot = ({channels}'d1 << sel);
+    {top}_core u_core (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .sel_onehot (sel_onehot),
+        .data_in    (data_in),
+        .data_out   (data_out)
+    );
+endmodule
+""", encoding="utf-8")
+
+        lec_script = f"""
+    read_verilog -sv {orig_files_str}
+    hierarchy -top {top}
+    flatten
+    rename {top} {top}_orig
+    design -save orig_des
+    design -reset
+
+    read_verilog -sv {opt_files_str}
+    hierarchy -top {top}
+    flatten
+    rename {top} {top}_core
+    read_verilog -sv "{wrapper_file}"
+    hierarchy -top {top}_opt
+    flatten
 
     design -copy-from orig_des {top}_orig {top}_orig
 

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 480" width="880" height="480">
+<defs>
+  <style>
+    .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 700; fill: #0f172a; }
+    .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; fill: #64748b; }
+    .axis-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; font-weight: 600; fill: #334155; }
+    .tick-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; fill: #64748b; }
+    .data-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 700; }
+    .legend-text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 500; fill: #334155; }
+    .grid-line { stroke: #f1f5f9; stroke-width: 1; }
+    .zero-line { stroke: #475569; stroke-width: 1.5; stroke-dasharray: 4,4; }
+    .axis-line { stroke: #cbd5e1; stroke-width: 1.5; }
+  </style>
+  <linearGradient id="grad-green" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#10b981" />
+    <stop offset="100%" stop-color="#059669" />
+  </linearGradient>
+  <linearGradient id="grad-blue" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#0ea5e9" />
+    <stop offset="100%" stop-color="#0284c7" />
+  </linearGradient>
+  <linearGradient id="grad-amber" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#f59e0b" />
+    <stop offset="100%" stop-color="#d97706" />
+  </linearGradient>
+  <linearGradient id="grad-red" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#f43f5e" />
+    <stop offset="100%" stop-color="#e11d48" />
+  </linearGradient>
+</defs>
+<rect width="880" height="480" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+<text x="440.0" y="36" text-anchor="middle" class="title">Sky130 独热编码多路选择器物理面积与标准单元门数对比</text><text x="440.0" y="56" text-anchor="middle" class="subtitle">与或门并行结构消除了多级 MUX 树的级联单元与多级驱动缓冲器，面积全面逆势精简 -3.6% ~ -14.1%</text><line x1="80" y1="400" x2="820" y2="400" class="grid-line"/><text x="70" y="404" text-anchor="end" class="tick-label">0 µm²</text><line x1="80" y1="351" x2="820" y2="351" class="grid-line"/><text x="70" y="355" text-anchor="end" class="tick-label">1000 µm²</text><line x1="80" y1="302" x2="820" y2="302" class="grid-line"/><text x="70" y="306" text-anchor="end" class="tick-label">2000 µm²</text><line x1="80" y1="253" x2="820" y2="253" class="grid-line"/><text x="70" y="257" text-anchor="end" class="tick-label">3000 µm²</text><line x1="80" y1="204" x2="820" y2="204" class="grid-line"/><text x="70" y="208" text-anchor="end" class="tick-label">4000 µm²</text><line x1="80" y1="154" x2="820" y2="154" class="grid-line"/><text x="70" y="158" text-anchor="end" class="tick-label">5000 µm²</text><line x1="80" y1="105" x2="820" y2="105" class="grid-line"/><text x="70" y="109" text-anchor="end" class="tick-label">6000 µm²</text><rect x="125.5" y="350" width="40" height="50" fill="#94a3b8" rx="2"/><text x="145.5" y="332" text-anchor="middle" class="data-label" fill="#475569">1032µm²</text><text x="145.5" y="344" text-anchor="middle" font-size="10px" fill="#64748b">(113门)</text><rect x="179.5" y="355" width="40" height="45" fill="#10b981" rx="2"/><text x="199.5" y="337" text-anchor="middle" class="data-label" fill="#047857">926µm²</text><text x="199.5" y="349" text-anchor="middle" font-size="10px" font-weight="700" fill="#047857">(-10.3%)</text><text x="172.5" y="422" text-anchor="middle" class="axis-label">4-to-1 MUX</text><text x="145.5" y="436" text-anchor="middle" class="tick-label">二进制 MUX</text><text x="199.5" y="436" text-anchor="middle" class="tick-label">独热 MUX</text><rect x="310.5" y="323" width="40" height="77" fill="#94a3b8" rx="2"/><text x="330.5" y="305" text-anchor="middle" class="data-label" fill="#475569">1582µm²</text><text x="330.5" y="317" text-anchor="middle" font-size="10px" fill="#64748b">(167门)</text><rect x="364.5" y="325" width="40" height="75" fill="#10b981" rx="2"/><text x="384.5" y="307" text-anchor="middle" class="data-label" fill="#047857">1524µm²</text><text x="384.5" y="319" text-anchor="middle" font-size="10px" font-weight="700" fill="#047857">(-3.6%)</text><text x="357.5" y="422" text-anchor="middle" class="axis-label">8-to-1 MUX</text><text x="330.5" y="436" text-anchor="middle" class="tick-label">二进制 MUX</text><text x="384.5" y="436" text-anchor="middle" class="tick-label">独热 MUX</text><rect x="495.5" y="259" width="40" height="141" fill="#94a3b8" rx="2"/><text x="515.5" y="241" text-anchor="middle" class="data-label" fill="#475569">2872µm²</text><text x="515.5" y="253" text-anchor="middle" font-size="10px" fill="#64748b">(332门)</text><rect x="549.5" y="269" width="40" height="131" fill="#10b981" rx="2"/><text x="569.5" y="251" text-anchor="middle" class="data-label" fill="#047857">2670µm²</text><text x="569.5" y="263" text-anchor="middle" font-size="10px" font-weight="700" fill="#047857">(-7.0%)</text><text x="542.5" y="422" text-anchor="middle" class="axis-label">16-to-1 MUX</text><text x="515.5" y="436" text-anchor="middle" class="tick-label">二进制 MUX</text><text x="569.5" y="436" text-anchor="middle" class="tick-label">独热 MUX</text><rect x="680.5" y="113" width="40" height="287" fill="#94a3b8" rx="2"/><text x="700.5" y="95" text-anchor="middle" class="data-label" fill="#475569">5838µm²</text><text x="700.5" y="107" text-anchor="middle" font-size="10px" fill="#64748b">(738门)</text><rect x="734.5" y="154" width="40" height="246" fill="#10b981" rx="2"/><text x="754.5" y="136" text-anchor="middle" class="data-label" fill="#047857">5015µm²</text><text x="754.5" y="148" text-anchor="middle" font-size="10px" font-weight="700" fill="#047857">(-14.1%)</text><text x="727.5" y="422" text-anchor="middle" class="axis-label">32-to-1 MUX</text><text x="700.5" y="436" text-anchor="middle" class="tick-label">二进制 MUX</text><text x="754.5" y="436" text-anchor="middle" class="tick-label">独热 MUX</text><rect x="180" y="456" width="14" height="10" rx="2" fill="#94a3b8"/><text x="198" y="466" class="legend-text">二进制 MUX 树物理标准单元面积 (µm²)</text><rect x="480" y="456" width="14" height="10" rx="2" fill="#10b981"/><text x="498" y="466" class="legend-text">独热并行与或 MUX 物理标准单元面积 (全面精简)</text></svg>

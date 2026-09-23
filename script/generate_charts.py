@@ -16,8 +16,9 @@ CG_DIR = BASE_IMG_DIR / "clock_gating"
 OI_DIR = BASE_IMG_DIR / "operand_isolation"
 DG_DIR = BASE_IMG_DIR / "data_gating"
 GC_DIR = BASE_IMG_DIR / "gray_counter"
+OHM_DIR = BASE_IMG_DIR / "onehot_mux"
 
-for d in [CG_DIR, OI_DIR, DG_DIR, GC_DIR]:
+for d in [CG_DIR, OI_DIR, DG_DIR, GC_DIR, OHM_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -1068,6 +1069,281 @@ def gen_gc_timing_delay():
     write_svg_and_validate(GC_DIR / "gc_timing_delay.svg", "".join(out))
 
 
+# ==============================================================================
+# One-Hot vs Binary MUX Charts
+# ==============================================================================
+
+def gen_ohm_total_power_delta():
+    """独热编码相较于二进制多路选择器各规模在不同通道切换率下的总功耗相对变化率柱状图"""
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 独热编码相较于二进制多路选择器总功耗相对变化率 (Total Power Delta %)</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">涵盖 4 种通道复用规模 (4/8/16/32-to-1) × 4 种通道切换活跃度 (5%/20%/50%/80%) 全物理后仿签核</text>')
+
+    x0, y0, cw, ch = 80, 80, 740, 320
+    # y 轴范围：-10% 到 +5%
+    y_min, y_max = -10.0, 5.0
+    y_range = y_max - y_min
+
+    def get_y(val):
+        return y0 + ch - int((val - y_min) / y_range * ch)
+
+    # 网格线与刻度
+    for tick in [-10, -8, -6, -4, -2, 0, 2, 4]:
+        ty = get_y(tick)
+        cls = "zero-line" if tick == 0 else "grid-line"
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="{cls}"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick:+d}%</text>')
+
+    # 绘制 0% 平衡线提示
+    zero_y = get_y(0)
+    out.append(f'<text x="{x0+cw-8}" y="{zero_y-6}" text-anchor="end" font-size="10px" font-weight="600" fill="#475569">0.0% 损益平衡线</text>')
+
+    data = [
+        ("4-to-1 MUX", [2.63, 0.00, -1.99, -3.30]),
+        ("8-to-1 MUX", [0.00, -0.78, -3.68, -6.21]),
+        ("16-to-1 MUX", [-0.54, -1.56, -4.01, -6.07]),
+        ("32-to-1 MUX", [2.31, -0.32, -4.24, -8.47]),
+    ]
+
+    colors = ["#f59e0b", "#0ea5e9", "#10b981", "#6366f1"]
+    gw = cw / len(data)
+    bw = 32
+    gap = 8
+
+    for gi, (name, vals) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+        for vi, (val, col) in enumerate(zip(vals, colors)):
+            bx = cx - 2 * bw - 1.5 * gap + vi * (bw + gap)
+            by = get_y(max(0, val))
+            bh = abs(get_y(val) - zero_y)
+            if bh < 2: bh = 2
+
+            out.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" fill="{col}" rx="3"/>')
+            ty_text = by - 6 if val >= 0 else by + bh + 12
+            out.append(f'<text x="{bx+bw/2}" y="{ty_text}" text-anchor="middle" class="data-label" fill="{col}">{val:+.1f}%</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+
+    lx, ly = x0 + 100, h - 18
+    legends = [
+        (colors[0], "通道切换 5% (准静态选通)"),
+        (colors[1], "通道切换 20% (偶发轻载切换)"),
+        (colors[2], "通道切换 50% (典型计算轮询)"),
+        (colors[3], "通道切换 80% (高频突发跳变)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*160}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*160+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(OHM_DIR / "ohm_total_power_delta.svg", "".join(out))
+
+
+def gen_ohm_power_breakdown():
+    """独热编码 vs 二进制多路选择器内部微观功耗精细拆解对比图 (Duty=50%)"""
+    w, h = 900, 500
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 二进制 MUX 树 vs 原生独热 MUX 内部微观功耗拆解对比 (Duty=50%)</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">微观物理分量：时钟网络 (Clock)、触发器时序 (Sequential)、组合逻辑 (Combinational)</text>')
+
+    x0, y0, cw, ch = 80, 80, 760, 340
+    y_max = 750.0
+
+    for tick in range(0, 800, 100):
+        ty = y0 + ch - int(ch * tick / y_max)
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} µW</text>')
+
+    data = [
+        ("4-to-1", (63.9, 44.5, 92.7), (64.8, 45.6, 86.7)),
+        ("8-to-1", (65.3, 44.7, 162.0), (63.9, 44.6, 154.0)),
+        ("16-to-1", (66.1, 45.2, 288.0), (64.8, 45.6, 272.0)),
+        ("32-to-1", (66.6, 45.3, 549.0), (65.7, 44.5, 523.0)),
+    ]
+
+    gw = cw / len(data)
+    bw = 42
+    gap = 14
+
+    for gi, (name, orig_parts, opt_parts) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 原始柱 (Orig)
+        bx1 = cx - bw - gap / 2
+        cy1 = y0 + ch
+        for val, col in zip(orig_parts, ["#94a3b8", "#38bdf8", "#f43f5e"]):
+            bh = int(ch * val / y_max)
+            cy1 -= bh
+            out.append(f'<rect x="{bx1}" y="{cy1}" width="{bw}" height="{bh}" fill="{col}"/>')
+        tot1 = sum(orig_parts)
+        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#0f172a">{tot1:.1f}</text>')
+
+        # 优化柱 (Opt)
+        bx2 = cx + gap / 2
+        cy2 = y0 + ch
+        for val, col in zip(opt_parts, ["#64748b", "#0284c7", "#10b981"]):
+            bh = int(ch * val / y_max)
+            cy2 -= bh
+            out.append(f'<rect x="{bx2}" y="{cy2}" width="{bw}" height="{bh}" fill="{col}"/>')
+        tot2 = sum(opt_parts)
+        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#047857">{tot2:.1f}</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">二进制</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">独热码</text>')
+
+    lx, ly = x0 + 30, h - 14
+    legends = [
+        ("#94a3b8", "时钟树功耗 (Clock)"),
+        ("#38bdf8", "时序触发器功耗 (Seq)"),
+        ("#f43f5e", "二进制-组合逻辑功耗 (Tree)"),
+        ("#10b981", "独热码-组合逻辑功耗 (AND-OR 显著降低)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*190}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*190+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(OHM_DIR / "ohm_power_breakdown.svg", "".join(out))
+
+
+def gen_ohm_timing_delay():
+    """独热编码 vs 二进制多路选择器关键路径延时与建立时间裕量 (Setup WS) 对比图"""
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 独热编码多路选择器关键路径延迟与时序裕量对比</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">打破对数级级联 MUX 树延时瓶颈：32-to-1 下关键路径延迟暴降 -23.6% (5.30ns → 4.05ns)</text>')
+
+    x0, y0, cw, ch = 80, 80, 740, 320
+    y_max = 8.0
+
+    for tick in range(0, 9, 1):
+        ty = y0 + ch - int(ch * tick / y_max)
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} ns</text>')
+
+    data = [
+        ("4-to-1 MUX", 3.334, 2.930, 6.540, 6.937),
+        ("8-to-1 MUX", 3.566, 3.350, 6.312, 6.496),
+        ("16-to-1 MUX", 4.257, 3.829, 5.616, 6.025),
+        ("32-to-1 MUX", 5.299, 4.050, 4.572, 5.813),
+    ]
+
+    gw = cw / len(data)
+    bw = 34
+    gap = 8
+
+    for gi, (name, o_dly, p_dly, o_ws, p_ws) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 延时柱 (Dly)
+        bx1 = cx - 2 * bw - gap
+        bh1 = int(ch * o_dly / y_max)
+        by1 = y0 + ch - bh1
+        out.append(f'<rect x="{bx1}" y="{by1}" width="{bw}" height="{bh1}" fill="#94a3b8" rx="2"/>')
+        out.append(f'<text x="{bx1+bw/2}" y="{by1-6}" text-anchor="middle" class="data-label" fill="#475569">{o_dly:.2f}</text>')
+
+        bx2 = cx - bw - gap / 2
+        bh2 = int(ch * p_dly / y_max)
+        by2 = y0 + ch - bh2
+        out.append(f'<rect x="{bx2}" y="{by2}" width="{bw}" height="{bh2}" fill="#f59e0b" rx="2"/>')
+        out.append(f'<text x="{bx2+bw/2}" y="{by2-6}" text-anchor="middle" class="data-label" fill="#b45309">{p_dly:.2f}</text>')
+
+        # 建立时间裕量 (WS) 柱
+        bx3 = cx + gap / 2
+        bh3 = int(ch * o_ws / y_max)
+        by3 = y0 + ch - bh3
+        out.append(f'<rect x="{bx3}" y="{by3}" width="{bw}" height="{bh3}" fill="#60a5fa" rx="2"/>')
+        out.append(f'<text x="{bx3+bw/2}" y="{by3-6}" text-anchor="middle" class="data-label" fill="#1d4ed8">{o_ws:.2f}</text>')
+
+        bx4 = cx + bw + gap
+        bh4 = int(ch * p_ws / y_max)
+        by4 = y0 + ch - bh4
+        out.append(f'<rect x="{bx4}" y="{by4}" width="{bw}" height="{bh4}" fill="#10b981" rx="2"/>')
+        out.append(f'<text x="{bx4+bw/2}" y="{by4-6}" text-anchor="middle" class="data-label" fill="#047857">{p_ws:.2f}</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{cx-bw-gap/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">延迟 (Delay)</text>')
+        out.append(f'<text x="{cx+bw+gap/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">裕量 (Setup WS)</text>')
+
+    lx, ly = x0 + 40, h - 14
+    legends = [
+        ("#94a3b8", "二进制-关键路径延时 (ns)"),
+        ("#f59e0b", "独热码-关键路径延时 (显著缩短)"),
+        ("#60a5fa", "二进制-Setup Slack (ns)"),
+        ("#10b981", "独热码-Setup Slack (裕量扩充 > 5.8ns)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*180}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*180+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(OHM_DIR / "ohm_timing_delay.svg", "".join(out))
+
+
+def gen_ohm_area_breakdown():
+    """独热编码 vs 二进制多路选择器物理面积与标准单元门数对比图"""
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 独热编码多路选择器物理面积与标准单元门数对比</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">与或门并行结构消除了多级 MUX 树的级联单元与多级驱动缓冲器，面积全面逆势精简 -3.6% ~ -14.1%</text>')
+
+    x0, y0, cw, ch = 80, 80, 740, 320
+    y_max = 6500.0
+
+    for tick in range(0, 7000, 1000):
+        ty = y0 + ch - int(ch * tick / y_max)
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} µm²</text>')
+
+    data = [
+        ("4-to-1 MUX", 1032.24, 925.89, 113, 88, -10.3),
+        ("8-to-1 MUX", 1581.52, 1523.96, 167, 162, -3.6),
+        ("16-to-1 MUX", 2871.50, 2670.06, 332, 294, -7.0),
+        ("32-to-1 MUX", 5838.10, 5014.81, 738, 624, -14.1),
+    ]
+
+    gw = cw / len(data)
+    bw = 40
+    gap = 14
+
+    for gi, (name, o_area, p_area, o_cnt, p_cnt, delta) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 原始面积
+        bx1 = cx - bw - gap / 2
+        bh1 = int(ch * o_area / y_max)
+        by1 = y0 + ch - bh1
+        out.append(f'<rect x="{bx1}" y="{by1}" width="{bw}" height="{bh1}" fill="#94a3b8" rx="2"/>')
+        out.append(f'<text x="{bx1+bw/2}" y="{by1-18}" text-anchor="middle" class="data-label" fill="#475569">{o_area:.0f}µm²</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{by1-6}" text-anchor="middle" font-size="10px" fill="#64748b">({o_cnt}门)</text>')
+
+        # 优化面积
+        bx2 = cx + gap / 2
+        bh2 = int(ch * p_area / y_max)
+        by2 = y0 + ch - bh2
+        out.append(f'<rect x="{bx2}" y="{by2}" width="{bw}" height="{bh2}" fill="#10b981" rx="2"/>')
+        out.append(f'<text x="{bx2+bw/2}" y="{by2-18}" text-anchor="middle" class="data-label" fill="#047857">{p_area:.0f}µm²</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{by2-6}" text-anchor="middle" font-size="10px" font-weight="700" fill="#047857">({delta:+.1f}%)</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">二进制 MUX</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">独热 MUX</text>')
+
+    lx, ly = x0 + 100, h - 14
+    legends = [
+        ("#94a3b8", "二进制 MUX 树物理标准单元面积 (µm²)"),
+        ("#10b981", "独热并行与或 MUX 物理标准单元面积 (全面精简)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*300}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*300+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(OHM_DIR / "ohm_area_breakdown.svg", "".join(out))
+
+
 def main():
     print("Generating validated, categorized SVG comparison charts...")
     gen_cg_total_power_delta()
@@ -1084,9 +1360,14 @@ def main():
     gen_gc_power_breakdown()
     gen_gc_area_breakdown()
     gen_gc_timing_delay()
+    gen_ohm_total_power_delta()
+    gen_ohm_power_breakdown()
+    gen_ohm_timing_delay()
+    gen_ohm_area_breakdown()
     print("All charts generated and validated successfully!")
 
 
 if __name__ == "__main__":
     main()
+
 

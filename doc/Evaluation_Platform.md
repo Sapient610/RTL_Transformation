@@ -281,4 +281,7 @@ eval_workspace/<category>/<case_name>/
 
 # 6. 运行格雷码计数器多维全物理参数化扫描与纯二进制计数器对比研究 (4/8/16/32-Bit)
 ./script/sweep_gray_counter.py
+
+# 7. 运行独热编码多路选择器多维全物理参数化扫描与二进制 MUX 树对比研究 (4/8/16/32-to-1)
+./script/sweep_onehot_mux.py
 ```
