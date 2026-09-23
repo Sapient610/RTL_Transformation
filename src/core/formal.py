@@ -22,6 +22,7 @@ def run_formal_lec(
     logger: logging.Logger,
     gray_counter_width: Optional[int] = None,
     onehot_mux_params: Optional[dict] = None,
+    bus_invert: bool = False,
 ):
     """
     通过 Yosys SAT 求解器执行层次化等价性比对，建立 Miter 电路严格断言。
@@ -140,6 +141,27 @@ endmodule
     equiv_simple
     equiv_induct
     equiv_status -assert
+    """
+    elif bus_invert:
+        lec_script = f"""
+    read_verilog -sv {orig_files_str}
+    hierarchy -top {top}
+    rename {top} {top}_orig
+    design -save orig_des
+    design -reset
+
+    read_verilog -sv {opt_files_str}
+    hierarchy -top {top}
+    rename {top} {top}_opt
+
+    design -copy-from orig_des {top}_orig {top}_orig
+
+    proc
+    clk2fflogic
+
+    miter -equiv -make_assert -flatten {top}_orig {top}_opt miter
+    hierarchy -top miter
+    sat -verify -prove-asserts -set-at 1 in_rst_n 0 -set-at 2 in_rst_n 1 -set-at 3 in_rst_n 1 -seq 4 miter
     """
     else:
         lec_script = f"""

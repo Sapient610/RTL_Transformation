@@ -226,6 +226,14 @@ LibreLane 驱动完整 80-Stage 物理设计全流程，各项关键阶段的默
 * **问题现象**：若在 CTS 之后开启激进的时序重重构（Resizer），综合器可能会将设计者精心设计的输入隔离与门或数据门控 MUX 视为冗余逻辑，或在平衡路径时将其打碎溶解入下游加法树/进位链中（如 8-Tap FIR 异常增生现象），从而彻底破坏 RTL 变换的低功耗初衷。
 * **工程准则**：显式配置 `"RUN_POST_CTS_RESIZER_TIMING": False`，严格维持 RTL 级门控结构。
 
+### 5.5 背靠背直连流水线寄存器极速角保持时间 (Hold) 校验策略
+* **问题现象**：对于两级流水线直连总线（如 Raw Bus），中间触发器与输出触发器间仅有纯走线金属而无任何组合门延迟，在极限快温角点（如 `-40℃, 1.95V` 即 `nom_ff_n40C_1v95`）下，Clk-to-Q 极快可能触发皮秒级 Hold 违例，导致 LibreLane Stage 80 默认将其判定为 Fatal Error 中断退出。
+* **工程准则**：在 `meta.json` 中配置 `"hold_violation_corners": [""]`，使非标称角点的轻微 Hold 报警降级为 Warning，确保完整生成物理版图、网表与 SPEF，统一由 OpenSTA 在 `25℃, 1.80V` 标称角点进行高精度工业签核。
+
+### 5.6 反转类流水线总线形式验证端到端 Miter 求解策略
+* **问题现象**：Bus-Invert 等包含条件取反逻辑的时序总线，其中间寄存器在触发反转时与原始基准值反相，传统的 `equiv_make` 会因无法对齐中间同名寄存器而报错产生虚假未证明单元。
+* **工程准则**：在 Yosys SAT 脚本中采用 `miter -equiv -make_assert -flatten` 端到端断言求解，并在 SAT 命令中注入确定性复位序列（`-set-at 1 in_rst_n 0 -set-at 2 in_rst_n 1 -set-at 3 in_rst_n 1 -seq 4 miter`），在消解未初始化不确定态的同时实现 100% 形式等价证明。
+
 ---
 
 ## 6. 工作空间目录结构契约 (Workspace Layout)

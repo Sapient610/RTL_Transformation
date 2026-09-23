@@ -8,6 +8,7 @@ RTL Transformation study reports in doc/images/ organized by subcategory:
 """
 
 import os
+import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -17,8 +18,8 @@ OI_DIR = BASE_IMG_DIR / "operand_isolation"
 DG_DIR = BASE_IMG_DIR / "data_gating"
 GC_DIR = BASE_IMG_DIR / "gray_counter"
 OHM_DIR = BASE_IMG_DIR / "onehot_mux"
-
-for d in [CG_DIR, OI_DIR, DG_DIR, GC_DIR, OHM_DIR]:
+BI_DIR = BASE_IMG_DIR / "bus_invert"
+for d in [CG_DIR, OI_DIR, DG_DIR, GC_DIR, OHM_DIR, BI_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -1344,6 +1345,278 @@ def gen_ohm_area_breakdown():
     write_svg_and_validate(OHM_DIR / "ohm_area_breakdown.svg", "".join(out))
 
 
+# ==============================================================================
+# Bus-Invert (BI) Coding Charts
+# ==============================================================================
+
+def load_bi_results():
+    p = BASE_IMG_DIR.parent.parent / "eval_workspace" / "bus_invert" / "sweep_results.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return None
+
+
+def gen_bi_total_power_delta():
+    """Sky130 总线反转编码 (Bus-Invert) 各规模在不同翻转活跃度下的总功耗相对变化率柱状图"""
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 总线反转编码 (Bus-Invert) 各规模在不同翻转活跃度下的总功耗相对变化率</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">涵盖 4 种总线位宽 (8b/16b/32b/64b) × 4 种翻转活跃度 (15%/35%/60%/85%) 全物理后仿签核</text>')
+
+    x0, y0, cw, ch = 80, 80, 740, 320
+    y_min, y_max = 0.0, 130.0
+    y_range = y_max - y_min
+
+    def get_y(val):
+        return y0 + ch - int((val - y_min) / y_range * ch)
+
+    # 网格线与刻度
+    for tick in range(0, 140, 20):
+        ty = get_y(tick)
+        cls = "zero-line" if tick == 0 else "grid-line"
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="{cls}"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">+{tick}%</text>')
+
+    zero_y = get_y(0)
+    out.append(f'<text x="{x0+cw-8}" y="{zero_y-6}" text-anchor="end" font-size="10px" font-weight="600" fill="#475569">0.0% 损益基准线 (Raw Bus)</text>')
+
+    data = [
+        ("8-bit 总线", [35.06, 56.07, 67.51, 59.09]),
+        ("16-bit 总线", [33.44, 59.45, 79.90, 67.39]),
+        ("32-bit 总线", [43.25, 70.96, 92.08, 75.84]),
+        ("64-bit 总线", [52.99, 86.47, 110.46, 88.37]),
+    ]
+
+    colors = ["#f59e0b", "#0ea5e9", "#10b981", "#6366f1"]
+    gw = cw / len(data)
+    bw = 32
+    gap = 8
+
+    for gi, (name, vals) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+        for vi, (val, col) in enumerate(zip(vals, colors)):
+            bx = cx - 2 * bw - 1.5 * gap + vi * (bw + gap)
+            by = get_y(val)
+            bh = zero_y - by
+            if bh < 2: bh = 2
+
+            out.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" fill="{col}" rx="3"/>')
+            out.append(f'<text x="{bx+bw/2}" y="{by-6}" text-anchor="middle" class="data-label" fill="{col}">+{val:.1f}%</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+
+    lx, ly = x0 + 80, h - 18
+    legends = [
+        (colors[0], "翻转率 15% (低频轻载传输)"),
+        (colors[1], "翻转率 35% (典型随机数据流)"),
+        (colors[2], "翻转率 60% (高频密集跳变)"),
+        (colors[3], "翻转率 85% (反转拐点效应显著)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*170}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*170+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(BI_DIR / "bi_total_power_delta.svg", "".join(out))
+
+
+def gen_bi_power_breakdown():
+    """Sky130 原始总线 vs 总线反转 (Bus-Invert) 内部微观功耗拆解对比 (Toggle Rate=60%)"""
+    w, h = 920, 500
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 原始总线 vs 总线反转 (Bus-Invert) 内部微观功耗拆解对比 (Toggle Rate=60%)</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">微观物理分量：时钟网络 (Clock)、触发器时序 (Sequential)、组合逻辑编码/解码 (Combinational)</text>')
+
+    x0, y0, cw, ch = 80, 80, 780, 340
+    y_max = 3500.0
+
+    for tick in range(0, 4000, 500):
+        ty = y0 + ch - int(ch * tick / y_max)
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} µW</text>')
+
+    # 格式: (scale_name, (orig_clock, orig_seq, orig_comb), (opt_clock, opt_seq, opt_comb))
+    data = [
+        ("8-bit 总线", (73.4, 94.0, 29.2), (81.9, 111.0, 137.0)),
+        ("16-bit 总线", (165.0, 190.0, 58.5), (151.0, 212.0, 379.0)),
+        ("32-bit 总线", (337.0, 377.0, 119.0), (349.0, 421.0, 825.0)),
+        ("64-bit 总线", (522.0, 762.0, 242.0), (497.0, 830.0, 1900.0)),
+    ]
+
+    gw = cw / len(data)
+    bw = 44
+    gap = 16
+
+    for gi, (name, orig_parts, opt_parts) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 原始柱 (Orig)
+        bx1 = cx - bw - gap / 2
+        cy1 = y0 + ch
+        for val, col in zip(orig_parts, ["#94a3b8", "#38bdf8", "#f43f5e"]):
+            bh = int(ch * val / y_max)
+            cy1 -= bh
+            out.append(f'<rect x="{bx1}" y="{cy1}" width="{bw}" height="{bh}" fill="{col}"/>')
+        tot1 = sum(orig_parts)
+        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#0f172a">{tot1:.0f}</text>')
+
+        # 优化柱 (Opt)
+        bx2 = cx + gap / 2
+        cy2 = y0 + ch
+        for val, col in zip(opt_parts, ["#64748b", "#0284c7", "#f59e0b"]):
+            bh = int(ch * val / y_max)
+            cy2 -= bh
+            out.append(f'<rect x="{bx2}" y="{cy2}" width="{bw}" height="{bh}" fill="{col}"/>')
+        tot2 = sum(opt_parts)
+        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#b45309">{tot2:.0f}</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">原始总线</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">Bus-Invert</text>')
+
+    lx, ly = x0 + 40, h - 14
+    legends = [
+        ("#94a3b8", "时钟网络功耗 (Clock)"),
+        ("#38bdf8", "时序寄存器功耗 (Sequential)"),
+        ("#f43f5e", "原始总线组合逻辑 (Combinational)"),
+        ("#f59e0b", "Bus-Invert 组合逻辑 (加法树与异或开销)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*190}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*190+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(BI_DIR / "bi_power_breakdown.svg", "".join(out))
+
+
+def gen_bi_switching_reduction():
+    """Sky130 总线反转编码 (Bus-Invert) 动态翻转功耗相对变化率柱状图"""
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 总线反转编码 (Bus-Invert) 动态翻转功耗相对变化率 (Switching Power Delta %)</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">片上短线场景下编码器/解码器内部节点的高频翻转导致翻转功耗激增，85% 翻转率因反转截断呈现回落拐点</text>')
+
+    x0, y0, cw, ch = 80, 80, 740, 320
+    y_min, y_max = 0.0, 450.0
+    y_range = y_max - y_min
+
+    def get_y(val):
+        return y0 + ch - int((val - y_min) / y_range * ch)
+
+    for tick in range(0, 500, 50):
+        ty = get_y(tick)
+        cls = "zero-line" if tick == 0 else "grid-line"
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="{cls}"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">+{tick}%</text>')
+
+    zero_y = get_y(0)
+    out.append(f'<text x="{x0+cw-8}" y="{zero_y-6}" text-anchor="end" font-size="10px" font-weight="600" fill="#475569">0.0% 损益基准线</text>')
+
+    data = [
+        ("8-bit 总线", [110.0, 193.1, 264.0, 256.7]),
+        ("16-bit 总线", [132.2, 224.9, 319.5, 291.4]),
+        ("32-bit 总线", [134.5, 226.6, 321.7, 288.0]),
+        ("64-bit 总线", [194.6, 294.4, 405.6, 345.2]),
+    ]
+
+    colors = ["#f59e0b", "#0ea5e9", "#10b981", "#6366f1"]
+    gw = cw / len(data)
+    bw = 32
+    gap = 8
+
+    for gi, (name, vals) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+        for vi, (val, col) in enumerate(zip(vals, colors)):
+            bx = cx - 2 * bw - 1.5 * gap + vi * (bw + gap)
+            by = get_y(val)
+            bh = zero_y - by
+            if bh < 2: bh = 2
+
+            out.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" fill="{col}" rx="3"/>')
+            out.append(f'<text x="{bx+bw/2}" y="{by-6}" text-anchor="middle" class="data-label" fill="{col}">+{val:.0f}%</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+
+    lx, ly = x0 + 80, h - 18
+    legends = [
+        (colors[0], "翻转率 15%"),
+        (colors[1], "翻转率 35%"),
+        (colors[2], "翻转率 60% (翻转功耗增量峰值)"),
+        (colors[3], "翻转率 85% (反转机制触发，翻转率回落)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*170}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*170+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(BI_DIR / "bi_switching_reduction.svg", "".join(out))
+
+
+def gen_bi_area_timing_tradeoff():
+    """Sky130 总线反转架构物理标准单元面积与时序延迟/裕量权衡图"""
+    w, h = 880, 480
+    out = [svg_header(w, h)]
+    out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 总线反转架构物理面积开销与关键路径时序延迟对比</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">汉明统计加法树与异或阵列导致面积激增 +90.5% ~ +122.8%，64b 下关键路径延迟逼近时钟周期 (8.79ns)</text>')
+
+    x0, y0, cw, ch = 80, 80, 740, 320
+    y_max = 14000.0
+
+    for tick in range(0, 16000, 2000):
+        ty = y0 + ch - int(ch * tick / y_max)
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} µm²</text>')
+
+    data = [
+        ("8-bit 总线", 696.9, 1327.5, 61, 129, 0.605, 4.685, 90.5),
+        ("16-bit 总线", 1391.3, 2854.0, 119, 307, 0.603, 5.201, 105.1),
+        ("32-bit 总线", 2796.4, 5954.5, 242, 633, 0.630, 7.377, 112.9),
+        ("64-bit 总线", 5469.0, 12182.9, 524, 1438, 0.627, 8.791, 122.8),
+    ]
+
+    gw = cw / len(data)
+    bw = 42
+    gap = 14
+
+    for gi, (name, o_area, p_area, o_cnt, p_cnt, o_dly, p_dly, delta_pct) in enumerate(data):
+        cx = x0 + gi * gw + gw / 2
+
+        # 原始面积柱
+        bx1 = cx - bw - gap / 2
+        bh1 = int(ch * o_area / y_max)
+        by1 = y0 + ch - bh1
+        out.append(f'<rect x="{bx1}" y="{by1}" width="{bw}" height="{bh1}" fill="#94a3b8" rx="2"/>')
+        out.append(f'<text x="{bx1+bw/2}" y="{by1-18}" text-anchor="middle" class="data-label" fill="#475569">{o_area:.0f}µm²</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{by1-6}" text-anchor="middle" font-size="10px" fill="#64748b">({o_cnt}门/{o_dly:.2f}ns)</text>')
+
+        # 优化面积柱
+        bx2 = cx + gap / 2
+        bh2 = int(ch * p_area / y_max)
+        by2 = y0 + ch - bh2
+        out.append(f'<rect x="{bx2}" y="{by2}" width="{bw}" height="{bh2}" fill="#f59e0b" rx="2"/>')
+        out.append(f'<text x="{bx2+bw/2}" y="{by2-18}" text-anchor="middle" class="data-label" fill="#b45309">{p_area:.0f}µm²</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{by2-6}" text-anchor="middle" font-size="10px" font-weight="700" fill="#b45309">(+{delta_pct:.1f}%/{p_dly:.2f}ns)</text>')
+
+        out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">原始总线</text>')
+        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">Bus-Invert</text>')
+
+    lx, ly = x0 + 80, h - 14
+    legends = [
+        ("#94a3b8", "原始总线物理标准单元面积 (µm²) 与延时 (ns)"),
+        ("#f59e0b", "Bus-Invert 物理面积 (面积增量 +90%~+123% / 延时显著延长)"),
+    ]
+    for li, (col, text) in enumerate(legends):
+        out.append(f'<rect x="{lx+li*330}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+li*330+18}" y="{ly}" class="legend-text">{text}</text>')
+
+    out.append(svg_footer())
+    write_svg_and_validate(BI_DIR / "bi_area_timing_tradeoff.svg", "".join(out))
+
+
 def main():
     print("Generating validated, categorized SVG comparison charts...")
     gen_cg_total_power_delta()
@@ -1364,10 +1637,15 @@ def main():
     gen_ohm_power_breakdown()
     gen_ohm_timing_delay()
     gen_ohm_area_breakdown()
+    gen_bi_total_power_delta()
+    gen_bi_power_breakdown()
+    gen_bi_switching_reduction()
+    gen_bi_area_timing_tradeoff()
     print("All charts generated and validated successfully!")
 
 
 if __name__ == "__main__":
     main()
+
 
 
