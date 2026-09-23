@@ -1376,12 +1376,12 @@ def load_bi_results():
 
 def gen_bi_total_power_delta():
     """Sky130 总线反转编码 (Bus-Invert) 各规模在不同翻转活跃度下的总功耗相对变化率柱状图 (带 I/O Pad 10pF 标称)"""
-    w, h = 900, 500
+    w, h = 940, 530
     out = [svg_header(w, h)]
     out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 总线反转编码 (Bus-Invert) 各规模在不同翻转活跃度下的总功耗相对变化率</text>')
-    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">工业标称 I/O Pad 容性负载 (10.0 pF) 全物理后仿签核 | 高活跃度下总线充放电节能彻底压倒编码逻辑开销 (最大净节电 -65% ~ -75%)</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">工业标称 I/O Pad 容性负载 (10.0 pF) 全物理后仿签核 | 高活跃度下总线充放电节能彻底压倒编码逻辑开销 (最大净节电 -65% ~ -77%)</text>')
 
-    x0, y0, cw, ch = 80, 90, 750, 320
+    x0, y0, cw, ch = 75, 85, 720, 320
     y_min, y_max = -80.0, 15.0
     y_range = y_max - y_min
 
@@ -1397,7 +1397,9 @@ def gen_bi_total_power_delta():
 
     zero_y = get_y(0.0)
     out.append(f'<line x1="{x0}" y1="{zero_y}" x2="{x0+cw}" y2="{zero_y}" class="zero-line"/>')
-    out.append(f'<text x="{x0+cw-8}" y="{zero_y-6}" text-anchor="end" font-size="10px" font-weight="700" fill="#475569">0.0% 损益平衡线 (Raw Bus)</text>')
+    # 损益基准线标注在右侧空白区，杜绝与 64-bit 柱状图及数据标签交叠
+    out.append(f'<text x="{x0+cw+10}" y="{zero_y-2}" font-size="10px" font-weight="700" fill="#475569">0.0% 损益线</text>')
+    out.append(f'<text x="{x0+cw+10}" y="{zero_y+11}" font-size="9px" fill="#64748b">(Raw Bus)</text>')
 
     # 动态加载数据，若不足则使用仿真签核基准
     res = load_bi_results()
@@ -1405,19 +1407,19 @@ def gen_bi_total_power_delta():
         ("8-bit 总线", [+2.29, -0.84, -26.47, -65.62]),
         ("16-bit 总线", [+3.07, +0.84, -27.50, -71.70]),
         ("32-bit 总线", [+3.35, +2.65, -27.90, -74.89]),
-        ("64-bit 总线", [+3.10, +1.80, -28.50, -75.80]),
+        ("64-bit 总线", [+4.24, +3.17, -28.62, -76.88]),
     ]
     data = []
     if res:
-        for w in [8, 16, 32, 64]:
-            w_key = f"{w}b"
+        for w_val in [8, 16, 32, 64]:
+            w_key = f"{w_val}b"
             if w_key in res and "toggle_rates" in res[w_key]:
                 vals = []
                 for tr in ["15", "35", "60", "85"]:
                     if tr in res[w_key]["toggle_rates"]:
                         vals.append(res[w_key]["toggle_rates"][tr]["power_delta_pct"])
                 if len(vals) == 4:
-                    data.append((f"{w}-bit 总线", vals))
+                    data.append((f"{w_val}-bit 总线", vals))
     if len(data) < 4:
         existing_names = [d[0] for d in data]
         for name, vals in default_data:
@@ -1449,96 +1451,186 @@ def gen_bi_total_power_delta():
 
         out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
 
-    lx, ly = x0 + 40, h - 18
-    legends = [
-        (colors[0], "翻转率 15% (低频轻载: 开销反噬 +2%~+3%)"),
+    # 底部图例采用双行两列排版，留足水平安全间距，杜绝文字交叠
+    legends_row1 = [
+        (colors[0], "翻转率 15% (低频轻载: 开销微增 +2%~+4%)"),
         (colors[1], "翻转率 35% (适度随机: 临界平衡 -1%~+3%)"),
-        (colors[2], "翻转率 60% (高频跳变: 稳态节能 -26%~-29%)"),
-        (colors[3], "翻转率 85% (极端密集: 断崖节电 -65%~-76%)"),
     ]
-    for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*195}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*195+18}" y="{ly}" class="legend-text">{text}</text>')
+    legends_row2 = [
+        (colors[2], "翻转率 60% (高频跳变: 稳态净节电 -26%~-29%)"),
+        (colors[3], "翻转率 85% (极端密集: 断崖式暴降 -65%~-77%)"),
+    ]
+
+    ly1 = h - 34
+    for li, (col, text) in enumerate(legends_row1):
+        lx = 90 + li * 430
+        out.append(f'<rect x="{lx}" y="{ly1-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+18}" y="{ly1}" class="legend-text">{text}</text>')
+
+    ly2 = h - 14
+    for li, (col, text) in enumerate(legends_row2):
+        lx = 90 + li * 430
+        out.append(f'<rect x="{lx}" y="{ly2-10}" width="14" height="10" rx="2" fill="{col}"/>')
+        out.append(f'<text x="{lx+18}" y="{ly2}" class="legend-text">{text}</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(BI_DIR / "bi_total_power_delta.svg", "".join(out))
 
 
 def gen_bi_power_breakdown():
-    """Sky130 原始总线 vs 总线反转 (Bus-Invert) 内部微观功耗精细拆解对比 (Toggle Rate=60%, C_pad=10.0pF)"""
-    w, h = 960, 530
+    """Sky130 原始总线 vs 总线反转 (Bus-Invert) 宏观能耗与内部微观功耗精细拆解对比 (Toggle Rate=60%)
+    采用双子图对比架构：(左) 宏观 Pad 翻转主导能耗 vs (右) 芯片内部微观开销放大视图，彻底解决微观分量不可见问题
+    """
+    w, h = 1000, 540
     out = [svg_header(w, h)]
-    out.append(f'<text x="{w/2}" y="34" text-anchor="middle" class="title">Sky130 原始总线 vs 总线反转 (Bus-Invert) 微观物理功耗精细拆解对比 (Toggle Rate=60%)</text>')
-    out.append(f'<text x="{w/2}" y="54" text-anchor="middle" class="subtitle">物理分量：时钟与时序 (Clock &amp; Seq)、芯片内部组合逻辑 (Internal Comb) 与外部 Pad 翻转功耗 (Pad Switching)</text>')
+    out.append(f'<text x="{w/2}" y="34" text-anchor="middle" class="title">Sky130 原始总线 vs 总线反转 (Bus-Invert) 宏观能耗与内部微观功耗精细拆解对比 (Toggle Rate=60%)</text>')
+    out.append(f'<text x="{w/2}" y="54" text-anchor="middle" class="subtitle">(左) 宏观系统级功耗: 外部 Pad 翻转节能占绝对主导 (-28%) vs (右) 芯片内部微观开销放大视图: 编解码加法树功耗反噬 (+80%~+116%)</text>')
 
-    x0, y0, cw, ch = 80, 95, 800, 320
-    y_max = 70.0  # mW
+    # --------------------------------------------------------------------------
+    # 子图 1 (左侧)：宏观系统级功耗对比 (0 ~ 70 mW，含 Pad 翻转功耗与片内微量功耗)
+    # --------------------------------------------------------------------------
+    px0, py0, pcw, pch = 65, 95, 400, 310
+    py_max1 = 70.0  # mW
+
+    out.append(f'<rect x="{px0-8}" y="{py0-25}" width="{pcw+16}" height="20" rx="4" fill="#f8fafc" stroke="#e2e8f0"/>')
+    out.append(f'<text x="{px0+pcw/2}" y="{py0-11}" text-anchor="middle" font-size="11px" font-weight="700" fill="#1e293b">【宏观视图】系统级总功耗与外部 Pad 翻转对比 (单位: mW)</text>')
 
     for tick in range(0, 80, 10):
-        ty = y0 + ch - int(ch * tick / y_max)
-        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
-        out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} mW</text>')
+        ty = py0 + pch - int(pch * tick / py_max1)
+        out.append(f'<line x1="{px0}" y1="{ty}" x2="{px0+pcw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{px0-8}" y="{ty+4}" text-anchor="end" class="tick-label">{tick}</text>')
 
-    # 格式: (name, (orig_clk_seq_mW, orig_int_comb_mW, orig_pad_sw_mW), (opt_clk_seq_mW, opt_int_comb_mW, opt_pad_sw_mW))
-    data = [
-        ("8-bit 总线", (0.175, 0.052, 7.740), (0.199, 0.093, 5.560)),
-        ("16-bit 总线", (0.355, 0.105, 15.600), (0.382, 0.218, 11.000)),
-        ("32-bit 总线", (0.750, 0.220, 31.100), (0.784, 0.440, 22.000)),
-        ("64-bit 总线", (1.284, 0.440, 62.300), (1.369, 0.950, 43.400)),
+    # 宏观数据: (name, (orig_pad_sw_mW, orig_internal_mW, orig_tot_mW), (opt_pad_sw_mW, opt_internal_mW, opt_tot_mW))
+    macro_data = [
+        ("8-bit", (7.74, 0.23, 7.97), (5.56, 0.29, 5.86), -28.2, -26.5),
+        ("16-bit", (15.60, 0.46, 16.00), (11.00, 0.60, 11.60), -29.5, -27.5),
+        ("32-bit", (31.10, 0.97, 31.90), (22.00, 1.22, 23.00), -29.3, -27.9),
+        ("64-bit", (62.30, 1.72, 63.60), (43.40, 2.32, 45.40), -30.3, -28.6),
     ]
 
-    gw = cw / len(data)
-    bw = 44
-    gap = 16
+    gw1 = pcw / len(macro_data)
+    bw1 = 20
+    gap1 = 5
 
-    for gi, (name, orig_parts, opt_parts) in enumerate(data):
-        cx = x0 + gi * gw + gw / 2
-
-        tot1 = sum(orig_parts)
-        tot2 = sum(opt_parts)
-        d_clk_seq = (opt_parts[0] - orig_parts[0]) / orig_parts[0] * 100.0
-        d_int = (opt_parts[1] - orig_parts[1]) / orig_parts[1] * 100.0
-        d_pad = (opt_parts[2] - orig_parts[2]) / orig_parts[2] * 100.0
-        d_tot = (tot2 - tot1) / tot1 * 100.0
-
-        # 各分量相对变化指标标签 (在每组顶部清晰标明)
-        out.append(f'<rect x="{cx-105}" y="{y0-24}" width="210" height="18" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>')
-        out.append(f'<text x="{cx}" y="{y0-11}" text-anchor="middle" font-size="9.5px" font-weight="600" fill="#334155">ΔPad: <tspan fill="#047857" font-weight="700">{d_pad:.1f}%</tspan> | ΔInt: +{d_int:.0f}% | ΔSeq: {d_clk_seq:+.0f}%</text>')
+    for gi, (name, (orig_pad, orig_int, orig_tot), (opt_pad, opt_int, opt_tot), d_pad, d_tot) in enumerate(macro_data):
+        cx = px0 + gi * gw1 + gw1 / 2
 
         # 原始柱 (Orig)
-        bx1 = cx - bw - gap / 2
-        cy1 = y0 + ch
-        for vi, (val, col) in enumerate(zip(orig_parts, ["#94a3b8", "#f43f5e", "#0284c7"])):
-            bh = int(ch * val / y_max)
-            cy1 -= bh
-            out.append(f'<rect x="{bx1}" y="{cy1}" width="{bw}" height="{bh}" fill="{col}"/>')
+        bx1 = cx - bw1 - gap1 / 2
+        bh_pad1 = int(pch * orig_pad / py_max1)
+        bh_int1 = int(pch * orig_int / py_max1)
+        if bh_int1 < 2: bh_int1 = 2
+        by_pad1 = py0 + pch - bh_pad1
+        by_int1 = by_pad1 - bh_int1
 
-        out.append(f'<text x="{bx1+bw/2}" y="{cy1-6}" text-anchor="middle" class="data-label" fill="#475569">{tot1:.2f}mW</text>')
+        out.append(f'<rect x="{bx1}" y="{by_pad1}" width="{bw1}" height="{bh_pad1}" fill="#0ea5e9"/>')
+        out.append(f'<rect x="{bx1}" y="{by_int1}" width="{bw1}" height="{bh_int1}" fill="#94a3b8"/>')
+        out.append(f'<text x="{bx1+bw1/2}" y="{by_int1-5}" text-anchor="middle" class="data-label" fill="#475569">{orig_tot:.1f}</text>')
 
         # 优化柱 (Opt)
-        bx2 = cx + gap / 2
-        cy2 = y0 + ch
-        for vi, (val, col) in enumerate(zip(opt_parts, ["#64748b", "#f59e0b", "#10b981"])):
-            bh = int(ch * val / y_max)
-            cy2 -= bh
-            out.append(f'<rect x="{bx2}" y="{cy2}" width="{bw}" height="{bh}" fill="{col}"/>')
+        bx2 = cx + gap1 / 2
+        bh_pad2 = int(pch * opt_pad / py_max1)
+        bh_int2 = int(pch * opt_int / py_max1)
+        if bh_int2 < 2: bh_int2 = 2
+        by_pad2 = py0 + pch - bh_pad2
+        by_int2 = by_pad2 - bh_int2
 
-        out.append(f'<text x="{bx2+bw/2}" y="{cy2-6}" text-anchor="middle" class="data-label" fill="#047857">{tot2:.2f}mW ({d_tot:+.1f}%)</text>')
+        out.append(f'<rect x="{bx2}" y="{by_pad2}" width="{bw1}" height="{bh_pad2}" fill="#10b981"/>')
+        out.append(f'<rect x="{bx2}" y="{by_int2}" width="{bw1}" height="{bh_int2}" fill="#f59e0b"/>')
+        out.append(f'<text x="{bx2+bw1/2}" y="{by_int2-5}" text-anchor="middle" class="data-label" fill="#047857">{opt_tot:.1f}</text>')
 
-        out.append(f'<text x="{cx}" y="{y0+ch+20}" text-anchor="middle" class="axis-label">{name}</text>')
-        out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+34}" text-anchor="middle" class="tick-label">原始总线</text>')
-        out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+34}" text-anchor="middle" class="tick-label" font-weight="600" fill="#047857">Bus-Invert</text>')
+        # 顶部徽章
+        out.append(f'<rect x="{cx-36}" y="{by_pad2-28}" width="72" height="15" rx="3" fill="#ecfdf5" stroke="#10b981" stroke-width="0.8"/>')
+        out.append(f'<text x="{cx}" y="{by_pad2-17}" text-anchor="middle" font-size="9px" font-weight="700" fill="#047857">{d_tot:+.1f}%</text>')
 
-    lx, ly = x0 + 10, h - 14
-    legends = [
-        ("#94a3b8", "时钟与时序逻辑 (Clock &amp; Seq: ~1.5%)"),
-        ("#f59e0b", "片内组合逻辑 (Internal Logic: 暴增 +80%~+120%)"),
-        ("#0284c7", "原始 Pad 翻转功耗 (Orig Pad Switching: 占比 &gt;96%)"),
-        ("#10b981", "Bus-Invert Pad 翻转功耗 (Pad Switching: 净降 -28%~-33%)"),
+        out.append(f'<text x="{cx}" y="{py0+pch+18}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw1/2}" y="{py0+pch+30}" text-anchor="middle" class="tick-label">原总线</text>')
+        out.append(f'<text x="{bx2+bw1/2}" y="{py0+pch+30}" text-anchor="middle" class="tick-label" font-weight="600" fill="#047857">BI</text>')
+
+    # --------------------------------------------------------------------------
+    # 子图 2 (右侧)：芯片内部微观开销放大视图 (0 ~ 2500 µW，时钟/时序/组合逻辑清晰可辨)
+    # --------------------------------------------------------------------------
+    px1, py1, pcw1, pch1 = 545, 95, 400, 310
+    py_max2 = 2500.0  # uW
+
+    out.append(f'<rect x="{px1-8}" y="{py1-25}" width="{pcw1+16}" height="20" rx="4" fill="#f8fafc" stroke="#e2e8f0"/>')
+    out.append(f'<text x="{px1+pcw1/2}" y="{py1-11}" text-anchor="middle" font-size="11px" font-weight="700" fill="#1e293b">【微观放大】芯片内部逻辑与时钟开销精细拆解 (单位: µW)</text>')
+
+    for tick in range(0, 3000, 500):
+        ty = py1 + pch1 - int(pch1 * tick / py_max2)
+        out.append(f'<line x1="{px1}" y1="{ty}" x2="{px1+pcw1}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<text x="{px1-8}" y="{ty+4}" text-anchor="end" class="tick-label">{tick}</text>')
+
+    # 内部微观分量: (name, (orig_clk, orig_seq, orig_comb), (opt_clk, opt_seq, opt_comb))
+    micro_data = [
+        ("8-bit", (72.2, 103.0, 51.5), (81.1, 118.0, 93.1), +80.8, +14.6),
+        ("16-bit", (148.0, 207.0, 105.0), (160.0, 222.0, 218.0), +107.6, +7.2),
+        ("32-bit", (336.0, 414.0, 220.0), (342.0, 442.0, 440.0), +100.0, +6.8),
+        ("64-bit", (439.0, 845.0, 440.0), (492.0, 877.0, 950.0), +115.9, +3.8),
     ]
-    for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*205}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*205+18}" y="{ly}" class="legend-text" font-size="11px">{text}</text>')
+
+    gw2 = pcw1 / len(micro_data)
+    bw2 = 20
+    gap2 = 5
+
+    for gi, (name, (o_clk, o_seq, o_comb), (p_clk, p_seq, p_comb), d_comb, d_seq) in enumerate(micro_data):
+        cx = px1 + gi * gw2 + gw2 / 2
+
+        tot1 = o_clk + o_seq + o_comb
+        tot2 = p_clk + p_seq + p_comb
+
+        # 原始微观柱 (Stacked: Clk -> Seq -> Comb)
+        bx1 = cx - bw2 - gap2 / 2
+        bh_clk1 = int(pch1 * o_clk / py_max2)
+        bh_seq1 = int(pch1 * o_seq / py_max2)
+        bh_comb1 = int(pch1 * o_comb / py_max2)
+
+        by_clk1 = py1 + pch1 - bh_clk1
+        by_seq1 = by_clk1 - bh_seq1
+        by_comb1 = by_seq1 - bh_comb1
+
+        out.append(f'<rect x="{bx1}" y="{by_clk1}" width="{bw2}" height="{bh_clk1}" fill="#94a3b8"/>')
+        out.append(f'<rect x="{bx1}" y="{by_seq1}" width="{bw2}" height="{bh_seq1}" fill="#38bdf8"/>')
+        out.append(f'<rect x="{bx1}" y="{by_comb1}" width="{bw2}" height="{bh_comb1}" fill="#f43f5e"/>')
+        out.append(f'<text x="{bx1+bw2/2}" y="{by_comb1-5}" text-anchor="middle" class="data-label" fill="#475569">{tot1:.0f}</text>')
+
+        # 优化微观柱 (Stacked: Clk -> Seq -> Comb)
+        bx2 = cx + gap2 / 2
+        bh_clk2 = int(pch1 * p_clk / py_max2)
+        bh_seq2 = int(pch1 * p_seq / py_max2)
+        bh_comb2 = int(pch1 * p_comb / py_max2)
+
+        by_clk2 = py1 + pch1 - bh_clk2
+        by_seq2 = by_clk2 - bh_seq2
+        by_comb2 = by_seq2 - bh_comb2
+
+        out.append(f'<rect x="{bx2}" y="{by_clk2}" width="{bw2}" height="{bh_clk2}" fill="#64748b"/>')
+        out.append(f'<rect x="{bx2}" y="{by_seq2}" width="{bw2}" height="{bh_seq2}" fill="#0284c7"/>')
+        out.append(f'<rect x="{bx2}" y="{by_comb2}" width="{bw2}" height="{bh_comb2}" fill="#f59e0b"/>')
+        out.append(f'<text x="{bx2+bw2/2}" y="{by_comb2-5}" text-anchor="middle" class="data-label" fill="#b45309">{tot2:.0f}</text>')
+
+        # 顶部组合逻辑反噬指标标签
+        out.append(f'<rect x="{cx-45}" y="{by_comb2-28}" width="90" height="15" rx="3" fill="#fffbeb" stroke="#f59e0b" stroke-width="0.8"/>')
+        out.append(f'<text x="{cx}" y="{by_comb2-17}" text-anchor="middle" font-size="8.5px" font-weight="700" fill="#b45309">Δ加法树: +{d_comb:.0f}%</text>')
+
+        out.append(f'<text x="{cx}" y="{py1+pch1+18}" text-anchor="middle" class="axis-label">{name}</text>')
+        out.append(f'<text x="{bx1+bw2/2}" y="{py1+pch1+30}" text-anchor="middle" class="tick-label">原总线</text>')
+        out.append(f'<text x="{bx2+bw2/2}" y="{py1+pch1+30}" text-anchor="middle" class="tick-label" font-weight="600" fill="#b45309">BI</text>')
+
+    # --------------------------------------------------------------------------
+    # 底部图例（双行两列排版，清晰表达宏观与微观对应关系）
+    # --------------------------------------------------------------------------
+    ly1 = h - 34
+    out.append(f'<rect x="70" y="{ly1-10}" width="14" height="10" rx="2" fill="#0ea5e9"/>')
+    out.append(f'<text x="90" y="{ly1}" class="legend-text">原始 Pad 翻转功耗 (Orig Pad Sw: 7.7 ~ 62.3 mW)</text>')
+    out.append(f'<rect x="520" y="{ly1-10}" width="14" height="10" rx="2" fill="#10b981"/>')
+    out.append(f'<text x="540" y="{ly1}" class="legend-text">Bus-Invert Pad 翻转功耗 (BI Pad Sw: 净降 -28% ~ -30%)</text>')
+
+    ly2 = h - 14
+    out.append(f'<rect x="70" y="{ly2-10}" width="14" height="10" rx="2" fill="#38bdf8"/>')
+    out.append(f'<text x="90" y="{ly2}" class="legend-text">时序触发器与时钟网络 (Clock &amp; Seq: 175 ~ 1369 µW)</text>')
+    out.append(f'<rect x="520" y="{ly2-10}" width="14" height="10" rx="2" fill="#f59e0b"/>')
+    out.append(f'<text x="540" y="{ly2}" class="legend-text">内部组合逻辑 (Internal Comb: PopCount 加法树暴增 +81% ~ +116%)</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(BI_DIR / "bi_power_breakdown.svg", "".join(out))
@@ -1546,12 +1638,12 @@ def gen_bi_power_breakdown():
 
 def gen_bi_capacitance_sensitivity():
     """Sky130 总线反转编码：外部总线容抗敏感度扫描与黄金损益平衡电容 (C_breakeven) 曲线图"""
-    w, h = 940, 520
+    w, h = 960, 530
     out = [svg_header(w, h)]
     out.append(f'<text x="{w/2}" y="34" text-anchor="middle" class="title">Sky130 总线反转架构外部容抗敏感度扫描与黄金损益平衡点 (C_breakeven)</text>')
     out.append(f'<text x="{w/2}" y="54" text-anchor="middle" class="subtitle">扫描范围 C_load ∈ [0.05 pF ~ 15.0 pF] | 揭示片内轻载反噬 (+35%) vs 板级重载巨额节电 (-68%) 的物理分界线</text>')
 
-    x0, y0, cw, ch = 80, 85, 780, 330
+    x0, y0, cw, ch = 75, 85, 730, 330
     y_min, y_max = -75.0, 45.0
     y_range = y_max - y_min
 
@@ -1567,7 +1659,9 @@ def gen_bi_capacitance_sensitivity():
 
     zero_y = get_y(0.0)
     out.append(f'<line x1="{x0}" y1="{zero_y}" x2="{x0+cw}" y2="{zero_y}" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="6,4"/>')
-    out.append(f'<text x="{x0+cw-8}" y="{zero_y-6}" text-anchor="end" font-size="10px" font-weight="700" fill="#dc2626">0.0% 损益平衡红线 (Breakeven Line)</text>')
+    # 损益平衡红线标注在右侧外侧空白区，杜绝与曲线数据点及平衡点徽章交叠
+    out.append(f'<text x="{x0+cw+8}" y="{zero_y-2}" font-size="10px" font-weight="700" fill="#dc2626">0.0% 损益线</text>')
+    out.append(f'<text x="{x0+cw+8}" y="{zero_y+11}" font-size="9px" fill="#dc2626">(平衡红线)</text>')
 
     # 8 个离散测试电容点在 X 轴上的几何分布
     caps = [0.05, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0]
@@ -1586,27 +1680,27 @@ def gen_bi_capacitance_sensitivity():
 
     curves = [
         {
-            "name": "翻转率 15% (轻载传输: 全域无损益点)",
+            "name": "翻转率 15% (轻载传输: 全域无损益平衡点, 开销反噬)",
             "color": "#f59e0b",
             "pts": [(0.05, 27.27), (0.2, 23.68), (0.5, 18.75), (1.0, 13.92), (2.0, 9.20), (5.0, 5.08), (10.0, 2.29), (15.0, 1.89)],
             "breakeven": None,
         },
         {
-            "name": "翻转率 35% (适度翻转: C_breakeven = 7.43 pF)",
+            "name": "翻转率 35% (适度翻转: 损益平衡 C_breakeven = 7.43 pF)",
             "color": "#0ea5e9",
             "pts": [(0.05, 34.80), (0.2, 26.90), (0.5, 18.45), (1.0, 11.55), (2.0, 6.09), (5.0, 0.80), (10.0, -0.84), (15.0, -1.72)],
             "breakeven": 7.433,
             "badge_pos": "top",
         },
         {
-            "name": "翻转率 60% (高频跳变: C_breakeven = 484 fF)",
+            "name": "翻转率 60% (高频跳变: 损益平衡 C_breakeven = 484 fF)",
             "color": "#10b981",
             "pts": [(0.05, 25.82), (0.2, 12.60), (0.5, -0.70), (1.0, -11.00), (2.0, -18.28), (5.0, -24.10), (10.0, -26.47), (15.0, -27.46)],
             "breakeven": 0.484,
             "badge_pos": "top",
         },
         {
-            "name": "翻转率 85% (极端密集: C_breakeven = 54 fF)",
+            "name": "翻转率 85% (极端密集: 损益平衡 C_breakeven = 54 fF)",
             "color": "#6366f1",
             "pts": [(0.05, 0.43), (0.2, -17.54), (0.5, -34.98), (1.0, -47.05), (2.0, -56.03), (5.0, -62.99), (10.0, -65.62), (15.0, -68.25)],
             "breakeven": 0.054,
@@ -1639,10 +1733,18 @@ def gen_bi_capacitance_sensitivity():
                 out.append(f'<rect x="{bx-45}" y="{lbl_y-13}" width="90" height="17" rx="3" fill="#ffffff" stroke="{col}" stroke-width="1.2"/>')
                 out.append(f'<text x="{bx}" y="{lbl_y}" text-anchor="middle" font-size="9.5px" font-weight="700" fill="{col}">★ C = {bk_str}</text>')
 
-    lx, ly = x0 + 10, h - 16
-    for li, curve in enumerate(curves):
-        out.append(f'<circle cx="{lx+li*205+6}" cy="{ly-5}" r="5" fill="{curve["color"]}"/>')
-        out.append(f'<text x="{lx+li*205+16}" y="{ly}" class="legend-text" font-size="10.5px">{curve["name"]}</text>')
+    # 底部图例双行排版
+    ly1 = h - 34
+    out.append(f'<circle cx="86" cy="{ly1-5}" r="5" fill="{curves[0]["color"]}"/>')
+    out.append(f'<text x="98" y="{ly1}" class="legend-text">{curves[0]["name"]}</text>')
+    out.append(f'<circle cx="526" cy="{ly1-5}" r="5" fill="{curves[1]["color"]}"/>')
+    out.append(f'<text x="538" y="{ly1}" class="legend-text">{curves[1]["name"]}</text>')
+
+    ly2 = h - 14
+    out.append(f'<circle cx="86" cy="{ly2-5}" r="5" fill="{curves[2]["color"]}"/>')
+    out.append(f'<text x="98" y="{ly2}" class="legend-text">{curves[2]["name"]}</text>')
+    out.append(f'<circle cx="526" cy="{ly2-5}" r="5" fill="{curves[3]["color"]}"/>')
+    out.append(f'<text x="538" y="{ly2}" class="legend-text">{curves[3]["name"]}</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(BI_DIR / "bi_capacitance_sensitivity.svg", "".join(out))
@@ -1650,12 +1752,12 @@ def gen_bi_capacitance_sensitivity():
 
 def gen_bi_switching_reduction():
     """Sky130 总线反转编码 (Bus-Invert) 动态翻转功耗相对变化率柱状图 (C_pad=10.0pF)"""
-    w, h = 900, 490
+    w, h = 940, 530
     out = [svg_header(w, h)]
     out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 总线反转编码 (Bus-Invert) 动态翻转功耗相对变化率 (Switching Power Delta %)</text>')
-    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">标称 Pad 负载 (10.0 pF) 下动态翻转功耗显著缩减 | 85% 翻转率下总线翻转被强制截断在 50% 以下，翻转功耗暴降超 -67% ~ -77%</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">标称 Pad 负载 (10.0 pF) 下动态翻转功耗显著缩减 | 85% 翻转率下总线翻转被强制截断在 50% 以下，翻转功耗暴降超 -67% ~ -79%</text>')
 
-    x0, y0, cw, ch = 80, 85, 750, 320
+    x0, y0, cw, ch = 75, 85, 720, 320
     y_min, y_max = -80.0, 15.0
     y_range = y_max - y_min
 
@@ -1670,13 +1772,14 @@ def gen_bi_switching_reduction():
 
     zero_y = get_y(0.0)
     out.append(f'<line x1="{x0}" y1="{zero_y}" x2="{x0+cw}" y2="{zero_y}" class="zero-line"/>')
-    out.append(f'<text x="{x0+cw-8}" y="{zero_y-6}" text-anchor="end" font-size="10px" font-weight="700" fill="#475569">0.0% 损益基准线 (Raw Bus)</text>')
+    out.append(f'<text x="{x0+cw+10}" y="{zero_y-2}" font-size="10px" font-weight="700" fill="#475569">0.0% 损益线</text>')
+    out.append(f'<text x="{x0+cw+10}" y="{zero_y+11}" font-size="9px" fill="#64748b">(Raw Bus)</text>')
 
     data = [
         ("8-bit 总线", [+1.5, -2.0, -27.8, -67.3]),
         ("16-bit 总线", [+1.5, -0.2, -29.5, -73.6]),
         ("32-bit 总线", [+2.1, +1.6, -29.3, -76.8]),
-        ("64-bit 总线", [+1.8, +1.0, -30.5, -77.5]),
+        ("64-bit 总线", [+2.6, +1.9, -30.3, -78.7]),
     ]
 
     colors = ["#f59e0b", "#0ea5e9", "#10b981", "#6366f1"]
@@ -1704,16 +1807,18 @@ def gen_bi_switching_reduction():
 
         out.append(f'<text x="{cx}" y="{y0+ch+22}" text-anchor="middle" class="axis-label">{name}</text>')
 
-    lx, ly = x0 + 60, h - 18
-    legends = [
-        (colors[0], "翻转率 15% (低频轻载: +1.5%~+2.1%)"),
-        (colors[1], "翻转率 35% (适度翻转: -2.0%~+1.6%)"),
-        (colors[2], "翻转率 60% (高频跳变: 翻转抑制 -27%~-30%)"),
-        (colors[3], "翻转率 85% (极端密集: 反转截断 -67%~-77%)"),
-    ]
-    for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*180}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*180+18}" y="{ly}" class="legend-text">{text}</text>')
+    # 底部图例双行排版
+    ly1 = h - 34
+    out.append(f'<rect x="90" y="{ly1-10}" width="14" height="10" rx="2" fill="{colors[0]}"/>')
+    out.append(f'<text x="108" y="{ly1}" class="legend-text">翻转率 15% (低频轻载: +1.5%~+2.6%)</text>')
+    out.append(f'<rect x="520" y="{ly1-10}" width="14" height="10" rx="2" fill="{colors[1]}"/>')
+    out.append(f'<text x="538" y="{ly1}" class="legend-text">翻转率 35% (适度翻转: -2.0%~+1.9%)</text>')
+
+    ly2 = h - 14
+    out.append(f'<rect x="90" y="{ly2-10}" width="14" height="10" rx="2" fill="{colors[2]}"/>')
+    out.append(f'<text x="108" y="{ly2}" class="legend-text">翻转率 60% (高频跳变: 翻转抑制 -28%~-30%)</text>')
+    out.append(f'<rect x="520" y="{ly2-10}" width="14" height="10" rx="2" fill="{colors[3]}"/>')
+    out.append(f'<text x="538" y="{ly2}" class="legend-text">翻转率 85% (极端密集: 反转截断 -67%~-79%)</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(BI_DIR / "bi_switching_reduction.svg", "".join(out))
@@ -1721,17 +1826,17 @@ def gen_bi_switching_reduction():
 
 def gen_bi_area_timing_tradeoff():
     """Sky130 总线反转架构物理标准单元面积与时序延迟/裕量权衡图"""
-    w, h = 880, 480
+    w, h = 900, 510
     out = [svg_header(w, h)]
     out.append(f'<text x="{w/2}" y="36" text-anchor="middle" class="title">Sky130 总线反转架构物理面积开销与关键路径时序延迟对比</text>')
-    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">汉明统计加法树与异或阵列导致面积激增 +63% ~ +122%，64b 下关键路径延迟逼近时钟周期 (8.79ns)</text>')
+    out.append(f'<text x="{w/2}" y="56" text-anchor="middle" class="subtitle">汉明统计加法树与异或阵列导致面积增加 +63% ~ +84%，关键路径延迟延长至 4.7 ~ 8.2ns (Setup 裕量仍保持 &gt;1.67ns)</text>')
 
-    x0, y0, cw, ch = 80, 80, 740, 320
+    x0, y0, cw, ch = 80, 85, 740, 320
     y_max = 17000.0
 
     for tick in range(0, 18000, 2000):
         ty = y0 + ch - int(ch * tick / y_max)
-        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>')
+        out.append(f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="grid-line"/>' if tick != 0 else f'<line x1="{x0}" y1="{ty}" x2="{x0+cw}" y2="{ty}" class="zero-line"/>')
         out.append(f'<text x="{x0-10}" y="{ty+4}" text-anchor="end" class="tick-label">{tick} µm²</text>')
 
     data = [
@@ -1768,14 +1873,14 @@ def gen_bi_area_timing_tradeoff():
         out.append(f'<text x="{bx1+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">原始总线</text>')
         out.append(f'<text x="{bx2+bw/2}" y="{y0+ch+36}" text-anchor="middle" class="tick-label">Bus-Invert</text>')
 
-    lx, ly = x0 + 80, h - 14
-    legends = [
-        ("#94a3b8", "原始总线物理标准单元面积 (µm²) 与延时 (ns)"),
-        ("#f59e0b", "Bus-Invert 物理面积 (面积增量 +63%~+123% / 延时显著延长)"),
-    ]
-    for li, (col, text) in enumerate(legends):
-        out.append(f'<rect x="{lx+li*330}" y="{ly-10}" width="14" height="10" rx="2" fill="{col}"/>')
-        out.append(f'<text x="{lx+li*330+18}" y="{ly}" class="legend-text">{text}</text>')
+    # 底部图例双行排版，杜绝交叠
+    ly1 = h - 34
+    out.append(f'<rect x="120" y="{ly1-10}" width="14" height="10" rx="2" fill="#94a3b8"/>')
+    out.append(f'<text x="140" y="{ly1}" class="legend-text">原始总线物理标准单元面积 (µm²) 与关键路径延迟 (ns)</text>')
+
+    ly2 = h - 14
+    out.append(f'<rect x="120" y="{ly2-10}" width="14" height="10" rx="2" fill="#f59e0b"/>')
+    out.append(f'<text x="140" y="{ly2}" class="legend-text">Bus-Invert 物理面积 (面积增量 +63%~+84% / 延时延长至 4.7~8.2ns)</text>')
 
     out.append(svg_footer())
     write_svg_and_validate(BI_DIR / "bi_area_timing_tradeoff.svg", "".join(out))
