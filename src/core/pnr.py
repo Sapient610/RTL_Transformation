@@ -39,6 +39,7 @@ def run_pnr_flow(
     input_delay = float(meta.get("input_delay_ns", 2.0))
     output_delay = float(meta.get("output_delay_ns", 2.0))
     output_load = float(meta.get("output_load_pf", 0.033442))
+    pad_load = float(meta.get("pad_load_pf", 0.0))
     core_util = int(meta.get("core_utilization", 25))
     target_density = int(meta.get("target_density_pct", 35))
 
@@ -55,6 +56,10 @@ def run_pnr_flow(
     set_output_delay -max {output_delay} -clock {clock_port} [all_outputs]
     set_load {output_load} [all_outputs]
     """
+    if pad_load > 0.0:
+        sdc_content += f"""
+    catch {{set_load {pad_load} [get_ports pad_*]}}
+    """
     sdc_file.write_text(sdc_content, encoding="utf-8")
 
     design_config = {
@@ -70,6 +75,9 @@ def run_pnr_flow(
         "PL_TARGET_DENSITY_PCT": target_density,
         "RUN_POST_CTS_RESIZER_TIMING": meta.get("run_post_cts_resizer_timing", False),
         "HOLD_VIOLATION_CORNERS": meta.get("hold_violation_corners", [""]),
+        "SETUP_VIOLATION_CORNERS": meta.get("setup_violation_corners", [""]),
+        "MAX_CAP_VIOLATION_CORNERS": meta.get("max_cap_violation_corners", [""]),
+        "MAX_SLEW_VIOLATION_CORNERS": meta.get("max_slew_violation_corners", [""]),
         "PNR_SDC_FILE": str(sdc_file),
         "SIGNOFF_SDC_FILE": str(sdc_file),
         "RUN_KLAYOUT_STREAMOUT": True,

@@ -9,8 +9,11 @@ module bus_top #(
     input  wire             clk,
     input  wire             rst_n,
     input  wire [WIDTH-1:0] data_in,
+    output wire [WIDTH-1:0] pad_bus,
+    output wire             pad_inv,
     output reg  [WIDTH-1:0] data_out
 );
+    // 第一级发送寄存器 (TX Stage)
     reg [WIDTH-1:0] tx_bus;
 
     always @(posedge clk or negedge rst_n) begin
@@ -21,6 +24,11 @@ module bus_top #(
         end
     end
 
+    // Pad 物理总线引出 (板级/封装外引脚，由高容抗负载驱动)
+    assign pad_bus = tx_bus;
+    assign pad_inv = 1'b0;
+
+    // 第二级接收寄存器 (RX Stage)
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             data_out <= {WIDTH{1'b0}};
@@ -29,4 +37,3 @@ module bus_top #(
         end
     end
 endmodule
-

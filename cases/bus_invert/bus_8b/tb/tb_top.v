@@ -6,6 +6,8 @@ module tb_top;
     reg              clk;
     reg              rst_n;
     reg  [WIDTH-1:0] data_in;
+    wire [WIDTH-1:0] pad_bus;
+    wire             pad_inv;
     wire [WIDTH-1:0] data_out;
 
     // 实例化 DUT (由于 Orig 与 Opt 端口完全同名一致，直接例化)
@@ -13,6 +15,8 @@ module tb_top;
         .clk      (clk),
         .rst_n    (rst_n),
         .data_in  (data_in),
+        .pad_bus  (pad_bus),
+        .pad_inv  (pad_inv),
         .data_out (data_out)
     );
 
@@ -63,4 +67,3 @@ module tb_top;
         $finish;
     end
 endmodule
-

@@ -57,6 +57,28 @@ def setup_sweep_logger(log_dir: Path) -> logging.Logger:
     return logger
 
 
+def parse_power_rpt_file(power_rpt: Path) -> Dict[str, Any]:
+    pwr_metrics: Dict[str, Any] = {}
+    if power_rpt.exists():
+        text = power_rpt.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.strip()
+            for group in ["Sequential", "Combinational", "Clock", "Total"]:
+                if stripped.startswith(group) and any(unit in line for unit in ["W", "mW", "uW", "pW", "e-"]):
+                    parts = stripped.split()
+                    if len(parts) >= 5:
+                        pwr_metrics[f"{group}_Internal"] = parts[1]
+                        pwr_metrics[f"{group}_Switching"] = parts[2]
+                        pwr_metrics[f"{group}_Leakage"] = parts[3]
+                        pwr_metrics[f"{group}_Total"] = parts[4]
+                        if group == "Total":
+                            pwr_metrics["Internal"] = parts[1]
+                            pwr_metrics["Switching"] = parts[2]
+                            pwr_metrics["Leakage"] = parts[3]
+                            pwr_metrics["Total"] = parts[4]
+    return pwr_metrics
+
+
 def run_activity_sim_and_sta(
     case_name: str,
     width: int,
@@ -77,7 +99,7 @@ def run_activity_sim_and_sta(
     reports_dir: Path,
     log_dir: Path,
     logger: logging.Logger,
-) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """针对指定的输入数据翻转率运行门级后仿与 OpenSTA 签核"""
     sim_tag = f"{tag}_tr{toggle_rate}"
     sim_out = sim_dir / f"{sim_tag}.vvp"
@@ -126,17 +148,22 @@ def run_activity_sim_and_sta(
     create_clock -name {clock_port} -period {clock_period} [get_ports {clock_port}]
     set_input_delay -clock {clock_port} 2.0 [all_inputs]
     set_output_delay -clock {clock_port} 2.0 [all_outputs]
+    set_load 0.05 [all_outputs]
 
-    # 反标波形并提取寄生与动态功耗
+    # 单次初始反标提取时序与活跃度 (基准 0.05 pF 片上连线)
     read_vcd -scope tb_top/u_dut {str(vcd_out)}
-    report_power > {str(power_rpt)}
-
     report_checks -path_delay max -fields {{slew cap input nets fanout}} -format full_clock_expanded -digits 4 > {str(timing_rpt)}
     report_worst_slack -max
     report_worst_slack -min
     report_tns
-
     report_activity_annotation -report_annotated > {str(activity_ann_rpt)}
+
+    # 电容敏感度单调递增扫描 (0.05 pF ~ 15.0 pF)
+    foreach cap {{0.05 0.2 0.5 1.0 2.0 5.0 10.0 15.0}} {{
+        catch {{set_load $cap [get_ports pad_*]}}
+        read_vcd -scope tb_top/u_dut {str(vcd_out)}
+        report_power > "{str(reports_dir / f'sta_power_{sim_tag}_cap')}${{cap}}.rpt"
+    }}
     exit
     """
     sta_cmd_path = reports_dir / f"calc_signoff_{sim_tag}.tcl"
@@ -146,24 +173,16 @@ def run_activity_sim_and_sta(
     run_command_with_logging(["sta", str(sta_cmd_path)], sta_log, cwd=reports_dir, logger=logger)
 
     # 4. 解析指标
-    pwr_metrics: Dict[str, Any] = {}
-    if power_rpt.exists():
-        text = power_rpt.read_text(encoding="utf-8")
-        for line in text.splitlines():
-            stripped = line.strip()
-            for group in ["Sequential", "Combinational", "Clock", "Total"]:
-                if stripped.startswith(group) and any(unit in line for unit in ["W", "mW", "uW", "pW", "e-"]):
-                    parts = stripped.split()
-                    if len(parts) >= 5:
-                        pwr_metrics[f"{group}_Internal"] = parts[1]
-                        pwr_metrics[f"{group}_Switching"] = parts[2]
-                        pwr_metrics[f"{group}_Leakage"] = parts[3]
-                        pwr_metrics[f"{group}_Total"] = parts[4]
-                        if group == "Total":
-                            pwr_metrics["Internal"] = parts[1]
-                            pwr_metrics["Switching"] = parts[2]
-                            pwr_metrics["Leakage"] = parts[3]
-                            pwr_metrics["Total"] = parts[4]
+    cap_pwr_map: Dict[str, Any] = {}
+    for cap_v in [0.05, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0]:
+        cap_rpt = reports_dir / f"sta_power_{sim_tag}_cap{cap_v}.rpt"
+        cap_pwr_map[str(cap_v)] = parse_power_rpt_file(cap_rpt)
+
+    pwr_metrics = cap_pwr_map.get("10.0", {})
+    # 拷贝 10.0 pF 标称报告至主 power_rpt 方便查阅
+    nom_cap_rpt = reports_dir / f"sta_power_{sim_tag}_cap10.0.rpt"
+    if nom_cap_rpt.exists():
+        power_rpt.write_text(nom_cap_rpt.read_text(encoding="utf-8"), encoding="utf-8")
 
     timing_metrics: Dict[str, Any] = {
         "Clock_Period_ns": clock_period,
@@ -213,7 +232,7 @@ def run_activity_sim_and_sta(
                 if len(parts) >= 2 and parts[1].isdigit():
                     activity_metrics["Annotated_Pins"] = int(parts[1])
 
-    return pwr_metrics, timing_metrics, area_metrics, activity_metrics
+    return pwr_metrics, timing_metrics, area_metrics, activity_metrics, cap_pwr_map
 
 
 def run_bus_invert_sweep(
@@ -281,6 +300,7 @@ def run_bus_invert_sweep(
 
         # Step 1: Formal LEC (基于端到端 Miter 与 SAT 归纳证明)
         run_formal_lec(sources_orig, sources_opt, top, formal_dir, case_log_dir, logger, bus_invert=True)
+        run_formal_lec(sources_orig, sources_opt, top, formal_dir, case_log_dir, logger, bus_invert=True, bus_invert_width=width)
 
         # Step 2: Physical Implementation (LibreLane 80-Stage)
         def get_pnr_artifacts(tag: str) -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
@@ -320,14 +340,14 @@ def run_bus_invert_sweep(
             logger.info(f"\n>>> Running Signoff Sweep for [{width}b] with Toggle Rate = {tr}%")
 
             # 评估 Orig
-            pwr_orig, tmg_orig, area_orig, act_orig = run_activity_sim_and_sta(
+            pwr_orig, tmg_orig, area_orig, act_orig, cap_orig = run_activity_sim_and_sta(
                 case_name, width, tr, "orig", top, clock_port, clock_period,
                 netlist_orig, spef_orig, tb_path, prims_path, verilog_lib_path,
                 lib_path, blackbox_path, metrics_orig, sim_dir, reports_dir, case_log_dir, logger
             )
 
             # 评估 Opt
-            pwr_opt, tmg_opt, area_opt, act_opt = run_activity_sim_and_sta(
+            pwr_opt, tmg_opt, area_opt, act_opt, cap_opt = run_activity_sim_and_sta(
                 case_name, width, tr, "opt", top, clock_port, clock_period,
                 netlist_opt, spef_opt, tb_path, prims_path, verilog_lib_path,
                 lib_path, blackbox_path, metrics_opt, sim_dir, reports_dir, case_log_dir, logger
@@ -364,6 +384,44 @@ def run_bus_invert_sweep(
             int_orig = parse_val(pwr_orig.get("Internal", "0"))
             int_opt = parse_val(pwr_opt.get("Internal", "0"))
 
+            # 计算电容敏感度与黄金损益平衡点 (Breakeven Capacitance)
+            cap_sweep_dict = {}
+            breakeven_cap = None
+            prev_cap = None
+            prev_delta = None
+            for cap_val in [0.05, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0]:
+                p_c_orig = parse_val(cap_orig.get(str(cap_val), {}).get("Total", "0"))
+                p_c_opt = parse_val(cap_opt.get(str(cap_val), {}).get("Total", "0"))
+                delta_c = ((p_c_opt - p_c_orig) / p_c_orig * 100.0) if p_c_orig > 0 else 0.0
+                sw_c_orig = parse_val(cap_orig.get(str(cap_val), {}).get("Switching", "0"))
+                sw_c_opt = parse_val(cap_opt.get(str(cap_val), {}).get("Switching", "0"))
+
+                cap_sweep_dict[str(cap_val)] = {
+                    "cap_pf": cap_val,
+                    "orig_total_power_uW": round(p_c_orig * 1e6, 3),
+                    "opt_total_power_uW": round(p_c_opt * 1e6, 3),
+                    "power_delta_pct": round(delta_c, 2),
+                    "orig_switching_power_uW": round(sw_c_orig * 1e6, 3),
+                    "opt_switching_power_uW": round(sw_c_opt * 1e6, 3),
+                }
+
+                if prev_delta is not None and breakeven_cap is None:
+                    if prev_delta > 0 and delta_c <= 0:
+                        fraction = (0.0 - prev_delta) / (delta_c - prev_delta)
+                        breakeven_cap = round(prev_cap + fraction * (cap_val - prev_cap), 3)
+                    elif prev_delta <= 0 and delta_c > 0:
+                        fraction = (0.0 - prev_delta) / (delta_c - prev_delta)
+                        breakeven_cap = round(prev_cap + fraction * (cap_val - prev_cap), 3)
+                prev_cap = cap_val
+                prev_delta = delta_c
+
+            if breakeven_cap is None:
+                first_delta = cap_sweep_dict["0.05"]["power_delta_pct"]
+                if first_delta <= 0:
+                    breakeven_cap = "<= 0.05"
+                else:
+                    breakeven_cap = "> 15.0"
+
             sweep_results[f"{width}b"]["toggle_rates"][str(tr)] = {
                 "orig_total_power_uW": round(p_orig * 1e6, 3),
                 "opt_total_power_uW": round(p_opt * 1e6, 3),
@@ -383,11 +441,14 @@ def run_bus_invert_sweep(
                 "opt_setup_ws_ns": tmg_opt.get("Setup_WS_ns", "N/A"),
                 "orig_critical_path_delay_ns": tmg_orig.get("Critical_Path_Delay_ns", "N/A"),
                 "opt_critical_path_delay_ns": tmg_opt.get("Critical_Path_Delay_ns", "N/A"),
+                "cap_sweep": cap_sweep_dict,
+                "breakeven_cap_pf": breakeven_cap,
             }
 
             logger.info(
                 f"[{width}b | ToggleRate={tr}%] Orig: {round(p_orig*1e6, 2)} uW -> Opt: {round(p_opt*1e6, 2)} uW "
                 f"| Delta: {round(p_delta_pct, 2)}% | Switching: {round(sw_orig*1e6, 2)}uW -> {round(sw_opt*1e6, 2)}uW ({round(sw_delta_pct, 1)}%)"
+                f"| Delta: {round(p_delta_pct, 2)}% | Breakeven Cap: {breakeven_cap} pF"
             )
 
         # 记录通用物理指标

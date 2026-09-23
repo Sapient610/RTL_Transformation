@@ -23,6 +23,7 @@ def run_formal_lec(
     gray_counter_width: Optional[int] = None,
     onehot_mux_params: Optional[dict] = None,
     bus_invert: bool = False,
+    bus_invert_width: Optional[int] = None,
 ):
     """
     通过 Yosys SAT 求解器执行层次化等价性比对，建立 Miter 电路严格断言。
@@ -143,6 +144,46 @@ endmodule
     equiv_status -assert
     """
     elif bus_invert:
+        bw = bus_invert_width if bus_invert_width is not None else 8
+        wrapper_file = formal_dir / "lec_bus_miter.v"
+        wrapper_file.write_text(f"""
+module miter (
+    input  wire                 clk,
+    input  wire                 rst_n,
+    input  wire [{bw-1}:0]      data_in
+);
+    wire [{bw-1}:0] orig_pad_bus;
+    wire            orig_pad_inv;
+    wire [{bw-1}:0] orig_data_out;
+
+    wire [{bw-1}:0] opt_pad_bus;
+    wire            opt_pad_inv;
+    wire [{bw-1}:0] opt_data_out;
+
+    {top}_orig u_orig (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .data_in (data_in),
+        .pad_bus (orig_pad_bus),
+        .pad_inv (orig_pad_inv),
+        .data_out(orig_data_out)
+    );
+
+    {top}_opt u_opt (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .data_in (data_in),
+        .pad_bus (opt_pad_bus),
+        .pad_inv (opt_pad_inv),
+        .data_out(opt_data_out)
+    );
+
+    always @(*) begin
+        assert(orig_data_out == opt_data_out);
+    end
+endmodule
+""", encoding="utf-8")
+
         lec_script = f"""
     read_verilog -sv {orig_files_str}
     hierarchy -top {top}
@@ -156,12 +197,12 @@ endmodule
 
     design -copy-from orig_des {top}_orig {top}_orig
 
+    read_verilog -sv "{wrapper_file}"
+    hierarchy -top miter
+    flatten
     proc
     clk2fflogic
-
-    miter -equiv -make_assert -flatten {top}_orig {top}_opt miter
-    hierarchy -top miter
-    sat -verify -prove-asserts -set-at 1 in_rst_n 0 -set-at 2 in_rst_n 1 -set-at 3 in_rst_n 1 -seq 4 miter
+    sat -verify -prove-asserts -set-at 1 rst_n 0 -set-at 2 rst_n 1 -set-at 3 rst_n 1 -seq 5 miter
     """
     else:
         lec_script = f"""

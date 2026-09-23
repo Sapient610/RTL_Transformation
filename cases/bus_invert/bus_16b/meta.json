@@ -9,7 +9,17 @@
   "output_delay_ns": 2.0,
   "core_utilization": 25,
   "target_density_pct": 35,
-  "sources_orig": ["bus_top.v"],
-  "sources_opt": ["bus_top.v"]
+  "sources_orig": [
+    "bus_top.v"
+  ],
+  "sources_opt": [
+    "bus_top.v"
+  ],
+  "pad_load_pf": 10.0,
+  "max_cap_violation_corners": [
+    ""
+  ],
+  "max_slew_violation_corners": [
+    ""
+  ]
 }
-

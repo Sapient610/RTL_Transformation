@@ -6,15 +6,21 @@ module tb_top;
     reg              clk;
     reg              rst_n;
     reg  [WIDTH-1:0] data_in;
+    wire [WIDTH-1:0] pad_bus;
+    wire             pad_inv;
     wire [WIDTH-1:0] data_out;
 
+    // 实例化 DUT (由于 Orig 与 Opt 端口完全同名一致，直接例化)
     bus_top u_dut (
         .clk      (clk),
         .rst_n    (rst_n),
         .data_in  (data_in),
+        .pad_bus  (pad_bus),
+        .pad_inv  (pad_inv),
         .data_out (data_out)
     );
 
+    // 100MHz 主频时钟 (周期 10.0ns)
     initial clk = 0;
     always #5.0 clk = ~clk;
 
@@ -48,6 +54,7 @@ module tb_top;
             @(posedge clk);
             #1;
 
+            // 根据目标翻转率生成相邻周期具有精确跳变概率的数据流
             for (b = 0; b < WIDTH; b = b + 1) begin
                 if (($urandom % 100) < toggle_rate_pct) begin
                     data_in[b] <= ~data_in[b];
@@ -60,4 +67,3 @@ module tb_top;
         $finish;
     end
 endmodule
-
